@@ -7,6 +7,7 @@ use threads::shared;
 my @threads;
 my $donework :shared;
 #my $nthreads :shared = 0;
+our (@matches);
 
 BEGIN{push @INC, "."};
 BEGIN{push @INC, "./misc"};
@@ -16,6 +17,7 @@ BEGIN{push @INC, "./regexes/supplement"};
 
 require "typename.regex.pl";
 require "primexpr.regex.pl";
+require "quicker.pl";
 
 use List::Util qw(max);
 
@@ -497,7 +499,7 @@ if(not $isnested)
 {
 
     #my $i = 2;
-    use if $debug, re => qw(Debug EXECUTE); 
+    #use re qw(Debug EXECUTE); 
     #while(1) {
     #require "extractfns.pm";
     if($ENV{'REPLAY'}) {
@@ -517,7 +519,8 @@ if(not $isnested)
         cond_signal($donework);
         #while(1) {
             if(!$nthread) {
-                $regexfinal //= qr{(?(DEFINE)$mainregexdefs)^(*COMMIT)(?&cprogramfast)*+$}sxxo;
+                $searching = "playHandlerJumpUpGrab";
+                $regexfinal //= qr{(?(DEFINE)$mainregexdefs)^(*COMMIT)(?&cprogramfaster)*+$}sxxo;
                 $currregex = $regexfinal;
             } else {
                 $regexfinalthread //= qr{(?(DEFINE)$mainregexdefs)^(*COMMIT)(?&compoundstatement)}sxxo;
@@ -538,7 +541,7 @@ if(not $isnested)
             }
 =cut
         #}
-
+        #print2 "failed at @ " . pos() . "\n";
         if(!$nthread) {
             #print2 "full is $&";
             waitforthreads();

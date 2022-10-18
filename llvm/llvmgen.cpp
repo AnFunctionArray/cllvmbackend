@@ -73,7 +73,7 @@ extern "C" void __cdecl _wassert(
 #include <unordered_map>
 #include <fstream>
 #include <deque>
-#include <source_location>
+//#include <source_location>
 #include <algorithm>
 //#include <oniguruma.h>
 #include <llvm/ADT/Hashing.h>
@@ -85,6 +85,8 @@ extern "C" void __cdecl _wassert(
 
 #define PCRE2_CODE_UNIT_WIDTH 8
 #define PCRE2_STATIC
+
+static std::string modname;
 
 #if !defined(_WIN32) & !defined(_WIN64)
 //#include <pcre2.h>
@@ -398,7 +400,7 @@ constexpr inline auto operator"" _h(char const* p, size_t) {
 
 THREAD_LOCAL static std::unique_ptr<llvm::Module> mainmodule;
 
-static llvm::Module *_mainmodule;
+static std::unique_ptr<llvm::Module>*_mainmodule;
 
 llvm::DataLayout* pdatalayout;
 
@@ -406,7 +408,11 @@ bool bareweinabrupt(bool barewe = false);
 
 THREAD_LOCAL static std::unique_ptr<llvm::LLVMContext> llvmctx = std::make_unique<llvm::LLVMContext>();
 
+static std::unique_ptr<llvm::LLVMContext>*_llvmctx;
+
 THREAD_LOCAL static std::unique_ptr <llvm::IRBuilder<>> llvmbuilder;
+
+static std::unique_ptr <llvm::IRBuilder<>> *_llvmbuilder;
 
 /*using iterenumtype = std::list<std::list<std::string>>::iterator;
 
@@ -793,8 +799,9 @@ struct var : valbase {
 	llvm::Type* pllvmtype{};
 
 	auto requestType() {
-		return pllvmtype && &pllvmtype->getContext() == llvmctx.get() ? 
-			pllvmtype : pllvmtype = buildllvmtypefull(type);
+		return pllvmtype ? pllvmtype : 
+			&mainmodule == _mainmodule ? buildllvmtypefull(type)
+			: pllvmtype = buildllvmtypefull(type);
 	}
 
 	std::list<::type> fixupTypeIfNeeded() {
@@ -814,6 +821,11 @@ struct var : valbase {
 			|| &value->getContext() != llvmctx.get())
 			&& linkage != "typedef")
 			addvar(*this);
+		if (&mainmodule == _mainmodule) {
+			auto valcopy = value;
+			value = nullptr;
+			return valcopy;
+		}
 		return value;
 	}
 	std::string linkage;
@@ -3390,6 +3402,7 @@ THREAD_LOCAL static std::list<std::pair<llvm::SwitchInst*, llvm::BasicBlock*>> c
 llvm::BranchInst* splitbb(const char* identifier, size_t szident);
 
 DLL_EXPORT void beginscope() {
+	assert(&mainmodule != _mainmodule);
 	bool beginofafnuc = scopevar.size() == 1;
 	if (beginofafnuc) {
 		std::cout << "begin func at @" << &scopevar << std::endl;
@@ -3568,6 +3581,8 @@ val decay(val lvalue, bool bfunonly=false) {
 
 
 		lvalue.value = lvalue.lvalue;
+
+		lvalue.lvalue = nullptr;
 
 	}
 	return lvalue;
@@ -4026,7 +4041,7 @@ DLL_EXPORT void startmodule(const char* modulename, size_t szmodulename) {
 	pthread_mutexattr_setpshared(&mutexsharedattr, 1);
 	pthread_mutex_init(&mutexshared, &mutexsharedattr);*/
 	llvmbuilder = std::make_unique<llvm::IRBuilder<>>((*llvmctx));
-	mainmodule = std::make_unique<llvm::Module>(std::string{modulename, szmodulename}, (*llvmctx) );
+	mainmodule = std::make_unique<llvm::Module>(modname = std::string{modulename, szmodulename}, (*llvmctx) );
 
 	if(const char* datalayout = getenv("DATA_LAYOUT"))
 		pdatalayout = new llvm::DataLayout{ datalayout };
@@ -4072,10 +4087,12 @@ DLL_EXPORT void startmodule(const char* modulename, size_t szmodulename) {
 		} while (!replay.eof());
 	}
 
-	_mainmodule = mainmodule.get();
+	_mainmodule = &mainmodule;
 	_scopevar = &scopevar;
 	_structorunionmembers = &structorunionmembers;
 	_enums = &enums;
+	_llvmctx = &llvmctx;
+	_llvmbuilder = &llvmbuilder;
 
 	//system("PAUSE");
 }
@@ -4168,9 +4185,11 @@ DLL_EXPORT void initthread() {
 	(*llvmctx).setOpaquePointers(true);
 	mainmodule->setDataLayout(*pdatalayout);
 
-	scopevar = *_scopevar;
+	scopevar.front() = _scopevar->front();
 	structorunionmembers = *_structorunionmembers;
 	enums = *_enums;
+
+	currtypevectorbeingbuild = { {scopevar.begin(), currdecltypeenum::NORMAL} };
 
 	//condwake.notify_one();
 }
