@@ -1,3 +1,0 @@
-(?<unary>(?<prefixarith>\s*+(?<prefixarithraw>[+][+]|--))(?&unaryexpr)(?{call 'unaryincdec'})
-	|\s*+(?=(?<unop>[\&\*\+\-\~\!]))\g{unop}(?&castexpr)(?{call 'unary'})
-	|\s*+\bsizeof\b(?>(?&typename)(?{call 'endsizeoftypename'})|(?{call 'beginsizeofexpr'})(?&unaryexpr)(?{call 'endsizeofexpr'})))

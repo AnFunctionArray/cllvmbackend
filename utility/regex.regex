@@ -1,1 +1,0 @@
-^#include\s*(\"(?<filename>.*?)\"(?{parseregexfile($+{filename})})\s*,?+\s*)++\s*#entry\s*(?<prefix>\^)?\s*(?<entrygroup>\w+)

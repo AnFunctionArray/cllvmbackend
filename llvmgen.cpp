@@ -95,7 +95,7 @@ static std::string modname;
 #endif
 
 extern "C" {
-#include "../src/main.h"
+#include "./main.h"
 }
 
 DLL_EXPORT void endconstantexpr(), beginconstantexpr();

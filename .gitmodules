@@ -1,3 +1,6 @@
 [submodule "regularcbulk"]
 	path = regularcbulk
 	url = https://github.com/AnFunctionArray/regularcbulk.git
+[submodule "cperllexer"]
+	path = lexer
+	url = https://github.com/AnFunctionArray/cperllexer.git

@@ -4,7 +4,7 @@ project(regularc)
 
 add_custom_command(
     OUTPUT ${CMAKE_SOURCE_DIR}/perltoc.c
-    COMMAND xsubpp ${CMAKE_SOURCE_DIR}/src/perltoc.xs > ${CMAKE_SOURCE_DIR}/perltoc.c
+    COMMAND xsubpp ${CMAKE_SOURCE_DIR}/perltoc.xs > ${CMAKE_SOURCE_DIR}/perltoc.c
 )
 
 find_package(PerlLibs 5.28.0)
@@ -24,7 +24,7 @@ execute_process(COMMAND ${LLVM_CONFIG} --includedir
 execute_process(COMMAND ${LLVM_CONFIG} --libdir
                 OUTPUT_VARIABLE llvm_libdir)
 
-add_executable(regularc llvm/llvmgen.cpp src/main.c perltoc.c)
+add_executable(regularc llvmgen.cpp main.c perltoc.c)
 
 if(NOT PERLLIBS_FOUND)
     message(WARNING "Missing perl libraries")
@@ -44,7 +44,7 @@ string(STRIP ${llvm_libdir} llvm_libdir)
 
 target_link_directories(regularc PRIVATE ${llvm_libdir})
 
-target_link_libraries(regularc PRIVATE ${llvm_libraries} -rdynamic ${PERL_LIBRARY} -lpthread range-v3 range-v3-meta range-v3::meta range-v3-concepts -lz -lcurses -ldl -lcrypt)
+target_link_libraries(regularc PRIVATE ${llvm_libraries} -rdynamic ${PERL_LIBRARY} -lpthread range-v3 range-v3-meta range-v3::meta range-v3-concepts -lz -lcurses -ldl -lcrypt -ltinfo -lzstd)
 
 target_compile_options(regularc PRIVATE -rdynamic -O2 -g -fpermissive)
 
