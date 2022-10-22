@@ -249,7 +249,7 @@ struct retgetnamevalue getnamevalue(const char* nametoget) {
 
 XS__startmatching(), XS__callout(), XS__startmodule(), boot_DynaLoader(), endmodule()
 , XS__initthread1(), waitforthread(), preparethread(), XS__startmetaregex(), dumpabrupt(),
-endmoduleabrupt(), dumpmodule();
+endmoduleabrupt(), dumpmodule(), flushfilescopes(), XS__consumefilescopes1();
 
 static void
 xs_init(pTHX)
@@ -266,6 +266,8 @@ xs_init(pTHX)
 	//newXS("preparethread", preparethread, __FILE__);
 	newXS("waitforthread", waitforthread, __FILE__);
 	newXS("startmodule", XS__startmodule, __FILE__);
+	newXS("flushfilescopes", flushfilescopes, __FILE__);
+	newXS("consumefilescopes", XS__consumefilescopes1, __FILE__);
 }
 
 PerlInterpreter* my_perl; /***    The Perl interpreter    ***/
@@ -302,8 +304,15 @@ __thread int initial;
 
 __thread int areweinuser;
 
+unsigned long getcurrpos() {
+	SV *currpos = eval_pv("pos()", FALSE);
+	unsigned long pos =  SvUV(currpos);
+	sv_free(currpos);
+	return pos;
+}
+
 void handler1(int sig) {
-	printf("signal %d @ %u\n", sig, basepos + matchpos);
+	printf("signal %d @ %lu\n", sig, getcurrpos());
 	//dumpabrupt();
 	//exit(0);
 	/*if (!initial)
@@ -319,6 +328,41 @@ void handler1(int sig) {
 		//exit(-1);
 		die("unhandled");
 	}
+}
+
+int
+parse_filescope_var(what, sizewhat, flags, currpos, continuefrom)
+const char *what;
+size_t sizewhat;
+int flags;
+unsigned long currpos, continuefrom;
+{
+    dSP;
+
+    ENTER;
+    SAVETMPS;
+
+	int res = 0;
+
+    PUSHMARK(SP);
+    EXTEND(SP, 4);
+    PUSHs(sv_2mortal(newSVpvn(what, sizewhat)));
+	PUSHs(sv_2mortal(newSViv(flags)));
+	PUSHs(sv_2mortal(newSVuv(currpos)));
+	PUSHs(sv_2mortal(newSVuv(continuefrom)));
+    PUTBACK;
+
+    res = call_pv("parse_filescope_var", G_SCALAR);
+
+    SPAGAIN;
+
+	res = POPi;
+
+    PUTBACK;
+    FREETMPS;
+    LEAVE;
+
+	return res;
 }
 
 #ifdef _WIN32
@@ -397,7 +441,7 @@ int main(int argc, char** argv, char** env)
 	//exit(EXIT_SUCCESS);
 	//endmodule();
 	//dumpmodule();
-	endmodule();
+	//endmodule();
 	perl_destruct(my_perl);
 	perl_free(my_perl);
 	PERL_SYS_TERM();
@@ -452,7 +496,7 @@ U32 docall(const char *name, size_t szname, void *phashmap) {
 
 	if (!pfunc) return 0;
 	areweinuser = 1;
-	if (!__sigsetjmp(docalljmp, 1) && !binabrupt) {
+	if (!sigsetjmp(docalljmp, 1) && !binabrupt) {
 		//printf("@thread %p\n", &matchpos);
 		((void (*)(void* phashmap))pfunc)(phashmap);
 		areweinuser = 0;

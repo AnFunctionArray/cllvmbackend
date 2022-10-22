@@ -98,6 +98,11 @@ extern "C" {
 #include "./main.h"
 }
 
+auto splicethings = [] (auto &reflist, auto &refsrc) {
+	reflist.splice(reflist.end(), refsrc, refsrc.begin(), refsrc.end());
+};
+
+
 DLL_EXPORT void endconstantexpr(), beginconstantexpr();
 
 DLL_EXPORT void insertinttoimm(const char* str, size_t szstr, const char* suffix, size_t szstr1, int type);
@@ -2260,13 +2265,21 @@ DLL_EXPORT void obtainvalbyidentifier(std::unordered_map<unsigned, std::string>&
 
 static val* plastnotfound;
 
+extern "C" int
+parse_filescope_var(const char *what, size_t sizewhat, int flags, unsigned long currpos, unsigned long continuefrom);
+
+extern "C" unsigned long getcurrpos();
+
 const std::list<::var>::reverse_iterator obtainvalbyidentifier(std::string ident, bool push, bool bfindtypedef,
 	std::pair<std::list<std::list<::var>>::reverse_iterator, std::list<::var>::reverse_iterator> rfromwhere) {
+
+	unsigned long currpos = 0;
+	const unsigned long long lastpos = getcurrpos();
 
 	std::list<::var>::reverse_iterator var{};
 
 	var = rfromwhere.first->rend();
-
+tryagain:
 	if (push && scopevar.size() > 1) {
 		auto& currfunctype = currfunc->type.front().spec.func.parametertypes_list.front();
 
@@ -2290,6 +2303,25 @@ const std::list<::var>::reverse_iterator obtainvalbyidentifier(std::string ident
 	}
 	if (push) {
 	undef: {
+		decltype(scopevar) tmpscopevar;
+		decltype(currtypevectorbeingbuild) tmpcurrtypevectorbeingbuild;
+		decltype(structorunionmembers) tmpstructorunionmembers;
+		decltype(enums) tmpenums;
+
+		splicethings(tmpscopevar, scopevar);
+		splicethings(tmpcurrtypevectorbeingbuild, currtypevectorbeingbuild);
+		splicethings(tmpstructorunionmembers, structorunionmembers);
+		splicethings(tmpenums, enums);
+
+		currpos = parse_filescope_var(ident.c_str(), ident.size(), 0, lastpos, currpos);
+			
+		splicethings(scopevar, tmpscopevar);
+		splicethings(currtypevectorbeingbuild, tmpcurrtypevectorbeingbuild);
+		splicethings(structorunionmembers, tmpstructorunionmembers);
+		splicethings(enums, tmpenums);
+
+		if (currpos) goto tryagain;
+
 		std::cout << "not found: " << ident << std::endl;
 
 		type fntype{ type::FUNCTION };
@@ -2356,7 +2388,7 @@ DLL_EXPORT void finalize_initializer(std::unordered_map<unsigned, std::string>& 
 	if (currtypevectorbeingbuild.back().p->back().type.front().uniontype == type::ARRAY) {
 		if (scopevar.size() > 1) {
 			auto iterimm = ++immidiates.begin();
-			for (auto i : ranges::iota_view(0u, immidiates.size() - 1)) {
+			for (auto i : ranges::iota_view<size_t, size_t>(0zu, immidiates.size() - 1)) {
 				immidiates.push_back(val{ currtypevectorbeingbuild.back().p->back() });
 				insertinttoimm(std::to_string(i).c_str(), std::to_string(i).length(), "ul", sizeof "ul" - 1, 3);
 				phndl->subscripttwovalues();
@@ -3228,10 +3260,13 @@ void fixupstructype(std::list<::var>* var) {
 const std::list<::var>* getstructorunion(bascitypespec& basic) {
 	std::list<::var>* var = nullptr;
 
+	unsigned long currpos = 0;
+	const unsigned long long lastpos = getcurrpos();
+
 	std::string ident = basic.basic[3];
 
 	if(!ident.empty())
-
+tryagain:
 	std::find_if(structorunionmembers.rbegin(), structorunionmembers.rend(),
 		[&](std::list<std::list<::var>>& scope) {
 			auto iter = std::find_if(
@@ -3250,6 +3285,26 @@ const std::list<::var>* getstructorunion(bascitypespec& basic) {
 
 	if (var && !var->front().pllvmtype)
 		fixupstructype(var);
+	else {
+		decltype(scopevar) tmpscopevar;
+		decltype(currtypevectorbeingbuild) tmpcurrtypevectorbeingbuild;
+		decltype(structorunionmembers) tmpstructorunionmembers;
+		decltype(enums) tmpenums;
+
+		splicethings(tmpscopevar, scopevar);
+		splicethings(tmpcurrtypevectorbeingbuild, currtypevectorbeingbuild);
+		splicethings(tmpstructorunionmembers, structorunionmembers);
+		splicethings(tmpenums, enums);
+
+		currpos = parse_filescope_var(ident.c_str(), ident.size(), basic.basic[0] == "struct" ? 1 : 2, lastpos, currpos);
+			
+		splicethings(scopevar, tmpscopevar);
+		splicethings(currtypevectorbeingbuild, tmpcurrtypevectorbeingbuild);
+		splicethings(structorunionmembers, tmpstructorunionmembers);
+		splicethings(enums, tmpenums);
+
+		if (currpos) goto tryagain;
+	}
 
 	return var;
 }
@@ -3734,7 +3789,7 @@ DLL_EXPORT void endfunctioncall() {
 
 		for (auto &funccand : revfunsrank) {
 
-			funccand.second = distance * maxparamindividualscore + abs(distance - funccand.first->type.front().spec.func.parametertypes_list.front().size());
+			funccand.second = distance * maxparamindividualscore + std::abs(distance - (long long)funccand.first->type.front().spec.func.parametertypes_list.front().size());
 
 			auto argsiterarg = argsiter;
 			
@@ -4036,6 +4091,36 @@ decltype(getInt16Ty) getfnbynbits(int nbits) {
 static pthread_mutex_t mutexshared;
 static pthread_mutexattr_t mutexsharedattr;*/
 
+const auto initthreadmods = []{
+	_mainmodule = &mainmodule;
+	_scopevar = &scopevar;
+	_structorunionmembers = &structorunionmembers;
+	_enums = &enums;
+	_llvmctx = &llvmctx;
+	_llvmbuilder = &llvmbuilder;
+	return nullptr;
+}();
+static std::mutex syncstuff;
+static std::vector<std::pair<unsigned, decltype(scopevar)::value_type::iterator>> consumablescopevars;
+static std::vector<std::pair<unsigned, decltype(structorunionmembers)::value_type::iterator>> consumablestructorunionmembers;
+static std::vector<std::pair<unsigned, decltype(enums)::value_type::iterator>> consumableenums;
+
+DLL_EXPORT void flushfilescopes(unsigned nthreads) {
+	syncstuff.lock();
+	consumablescopevars.push_back({nthreads, --scopevar.front().end()});
+	consumablestructorunionmembers.push_back({nthreads, --structorunionmembers.front().end()});
+	consumableenums.push_back({nthreads, --enums.front().end()});
+	syncstuff.unlock();
+}
+
+DLL_EXPORT void consumefilescopes(unsigned i) {
+	syncstuff.lock();
+	scopevar.front().insert(scopevar.front().end(), (i > 0 ? ++decltype(scopevar)::value_type::iterator{consumablescopevars[i - 1].second} : _scopevar->front().begin()), ++decltype(scopevar)::value_type::iterator{consumablescopevars[i].second});
+	structorunionmembers.front().insert(structorunionmembers.front().end(), (i > 0 ? ++decltype(structorunionmembers)::value_type::iterator{consumablestructorunionmembers[i - 1].second} : _structorunionmembers->front().begin()), ++decltype(structorunionmembers)::value_type::iterator{consumablestructorunionmembers[i].second});
+	enums.front().insert(enums.front().end(), (i > 0 ? ++decltype(enums)::value_type::iterator{consumableenums[i - 1].second} : _enums->front().begin()), ++decltype(enums)::value_type::iterator{consumableenums[i].second});
+	syncstuff.unlock();
+}
+
 DLL_EXPORT void startmodule(const char* modulename, size_t szmodulename) {
 	/*pthread_mutexattr_init(&mutexsharedattr);
 	pthread_mutexattr_setpshared(&mutexsharedattr, 1);
@@ -4060,7 +4145,7 @@ DLL_EXPORT void startmodule(const char* modulename, size_t szmodulename) {
 	(*llvmctx).setOpaquePointers(true);
 	mainmodule->setDataLayout(*pdatalayout);
 
-	if(getenv("SILENT"))
+	/*if(getenv("SILENT"))
 		std::cout.rdbuf(NULL);
 
 	if (const char* preplaypath = getenv("REPLAY")) {
@@ -4092,7 +4177,7 @@ DLL_EXPORT void startmodule(const char* modulename, size_t szmodulename) {
 	_structorunionmembers = &structorunionmembers;
 	_enums = &enums;
 	_llvmctx = &llvmctx;
-	_llvmbuilder = &llvmbuilder;
+	_llvmbuilder = &llvmbuilder;*/
 
 	//system("PAUSE");
 }
@@ -4115,7 +4200,7 @@ extern "C" __thread jmp_buf docalljmp;
 extern "C" __thread int areweinuser;
 DLL_EXPORT void endmoduleabrupt() {
 	areweinuser = 1;
-	if (!__sigsetjmp(docalljmp, 1)) {
+	if (!sigsetjmp(docalljmp, 1)) {
 		if (scopevar.front().size()) if (auto& fun = scopevar.front().back(); fun.type.front().uniontype == type::FUNCTION) {
 			if (fun.value) if (auto llvmfun = dyn_cast<llvm::Function>(fun.value);
 				!llvmfun->isDeclaration()) {
@@ -4127,9 +4212,12 @@ DLL_EXPORT void endmoduleabrupt() {
 	endmodule();
 }
 
+DLL_EXPORT void dumpmodule();
+
 DLL_EXPORT void endmodule() {
+	dumpmodule();
 	areweinuser = 1;
-	if (!__sigsetjmp(docalljmp, 1)) {
+	if (!sigsetjmp(docalljmp, 1)) {
 		llvmbuilder.release();
 		mainmodule.release();
 		llvmctx.release();
@@ -4140,6 +4228,8 @@ DLL_EXPORT void endmodule() {
 	//endmoduleabrupt();
 }
 
+DLL_EXPORT __thread unsigned int matchpos;
+
 DLL_EXPORT void dumpmodule() {
 	if (getenv("THREADING")) {
 		mutexwork.lock();
@@ -4148,16 +4238,16 @@ DLL_EXPORT void dumpmodule() {
 		condwake.notify_one();
 		//pthread_join(thread, nullptr);
 	}
-	if (scopevar.front().size()) if (auto& fun = scopevar.front().back(); fun.type.front().uniontype == type::FUNCTION) {
-		if (fun.value) if (auto llvmfun = dyn_cast<llvm::Function>(fun.value); !llvmfun->isDeclaration()) {
+	//if (scopevar.front().size()) if (auto& fun = scopevar.front().back(); fun.type.front().uniontype == type::FUNCTION) {
+	//	if (fun.value) if (auto llvmfun = dyn_cast<llvm::Function>(fun.value); !llvmfun->isDeclaration()) {
 			areweinuser = 1;
-			if (!__sigsetjmp(docalljmp, 1)) {
+			if (!sigsetjmp(docalljmp, 1)) {
 				//pthread_mutex_lock(&mutexshared);
-				std::cout << "Dumping " << llvmfun->getName().str() << " ..." << std::endl;
+				std::cout << "Dumping " << mainmodule->getName().str() << " ..." << std::endl;
 				std::error_code code{};
 				llvm::raw_fd_ostream output{
-					std::string{llvmfun->getName().str()} + ".bc", code },
-					outputll{ std::string{llvmfun->getName().str()} + ".ll",
+					mainmodule->getName().str() + ".bc", code },
+					outputll{ mainmodule->getName().str() + ".ll",
 								code };
 				if (!record.is_open()) {
 					llvm::WriteBitcodeToFile(*mainmodule, output);
@@ -4165,13 +4255,13 @@ DLL_EXPORT void dumpmodule() {
 				}
 			}
 			areweinuser = 0;
-		}
+		//}
 		//endwork = true;
 		//dyn_cast<llvm::Function>(currfunc->value)->deleteBody();
 		//pthread_mutex_unlock(&mutexshared);
 		//nonconstructable.mainmodule.~Module();
 		//delete pdatalayout;
-	}
+	//}
 }
 #include "llvm/Transforms/Utils/Cloning.h"
 DLL_EXPORT void waitforthread() {

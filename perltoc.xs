@@ -75,6 +75,16 @@ CODE:
 	    initthread();
     }
 
+void
+consumefilescopes1(U32 n)
+CODE:
+    {
+        //extern __thread U32 matchpos, basepos;
+        //printf("print digit %d\n", baseposarg);
+	    //basepos = baseposarg;
+	    consumefilescopes(n);
+    }
+
 =pod
 extern startmetaregex(SV *in, AV *hashes, SV *out)
 CODE:
