@@ -342,7 +342,7 @@ unsigned long currpos, continuefrom;
     ENTER;
     SAVETMPS;
 
-	int res = 0;
+	unsigned long res = 0;
 
     PUSHMARK(SP);
     EXTEND(SP, 4);
@@ -356,7 +356,7 @@ unsigned long currpos, continuefrom;
 
     SPAGAIN;
 
-	res = POPi;
+	res = POPu;
 
     PUTBACK;
     FREETMPS;

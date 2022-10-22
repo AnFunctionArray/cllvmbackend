@@ -99,7 +99,7 @@ extern "C" {
 }
 
 auto splicethings = [] (auto &reflist, auto &refsrc) {
-	reflist.splice(reflist.end(), refsrc, refsrc.begin(), refsrc.end());
+	reflist.splice(reflist.end(), refsrc, ++refsrc.begin(), refsrc.end());
 };
 
 
@@ -797,7 +797,7 @@ struct val : valbase {
 
 void addvar(var& lastvar, llvm::Constant* pInitializer = nullptr);
 
-static THREAD_LOCAL std::vector<llvm::BasicBlock*> pcurrblock;
+static THREAD_LOCAL std::list<llvm::BasicBlock*> pcurrblock;
 
 struct var : valbase {
 
@@ -2270,6 +2270,29 @@ parse_filescope_var(const char *what, size_t sizewhat, int flags, unsigned long 
 
 extern "C" unsigned long getcurrpos();
 
+unsigned long parse_file_scope_ident(std::string ident, unsigned long lastpos, unsigned long currpos) {
+		decltype(scopevar) tmpscopevar;
+		decltype(currtypevectorbeingbuild) tmpcurrtypevectorbeingbuild;
+		decltype(structorunionmembers) tmpstructorunionmembers;
+		decltype(enums) tmpenums;
+		decltype(pcurrblock) tmppcurrblock = std::move(pcurrblock);
+
+		splicethings(tmpscopevar, scopevar);
+		splicethings(tmpcurrtypevectorbeingbuild, currtypevectorbeingbuild);
+		splicethings(tmpstructorunionmembers, structorunionmembers);
+		splicethings(tmpenums, enums);
+
+		currpos = parse_filescope_var(ident.c_str(), ident.size(), 0, lastpos, currpos);
+			
+		splicethings(scopevar, tmpscopevar);
+		splicethings(currtypevectorbeingbuild, tmpcurrtypevectorbeingbuild);
+		splicethings(structorunionmembers, tmpstructorunionmembers);
+		splicethings(enums, tmpenums);
+		pcurrblock = std::move(tmppcurrblock);
+
+		return currpos;
+}
+
 const std::list<::var>::reverse_iterator obtainvalbyidentifier(std::string ident, bool push, bool bfindtypedef,
 	std::pair<std::list<std::list<::var>>::reverse_iterator, std::list<::var>::reverse_iterator> rfromwhere) {
 
@@ -2303,24 +2326,8 @@ tryagain:
 	}
 	if (push) {
 	undef: {
-		decltype(scopevar) tmpscopevar;
-		decltype(currtypevectorbeingbuild) tmpcurrtypevectorbeingbuild;
-		decltype(structorunionmembers) tmpstructorunionmembers;
-		decltype(enums) tmpenums;
 
-		splicethings(tmpscopevar, scopevar);
-		splicethings(tmpcurrtypevectorbeingbuild, currtypevectorbeingbuild);
-		splicethings(tmpstructorunionmembers, structorunionmembers);
-		splicethings(tmpenums, enums);
-
-		currpos = parse_filescope_var(ident.c_str(), ident.size(), 0, lastpos, currpos);
-			
-		splicethings(scopevar, tmpscopevar);
-		splicethings(currtypevectorbeingbuild, tmpcurrtypevectorbeingbuild);
-		splicethings(structorunionmembers, tmpstructorunionmembers);
-		splicethings(enums, tmpenums);
-
-		if (currpos) goto tryagain;
+		if ((currpos = parse_file_scope_ident(ident, lastpos, currpos))) goto tryagain;
 
 		std::cout << "not found: " << ident << std::endl;
 
@@ -3286,24 +3293,8 @@ tryagain:
 	if (var && !var->front().pllvmtype)
 		fixupstructype(var);
 	else {
-		decltype(scopevar) tmpscopevar;
-		decltype(currtypevectorbeingbuild) tmpcurrtypevectorbeingbuild;
-		decltype(structorunionmembers) tmpstructorunionmembers;
-		decltype(enums) tmpenums;
 
-		splicethings(tmpscopevar, scopevar);
-		splicethings(tmpcurrtypevectorbeingbuild, currtypevectorbeingbuild);
-		splicethings(tmpstructorunionmembers, structorunionmembers);
-		splicethings(tmpenums, enums);
-
-		currpos = parse_filescope_var(ident.c_str(), ident.size(), basic.basic[0] == "struct" ? 1 : 2, lastpos, currpos);
-			
-		splicethings(scopevar, tmpscopevar);
-		splicethings(currtypevectorbeingbuild, tmpcurrtypevectorbeingbuild);
-		splicethings(structorunionmembers, tmpstructorunionmembers);
-		splicethings(enums, tmpenums);
-
-		if (currpos) goto tryagain;
+		if ((currpos = parse_file_scope_ident(ident, lastpos, currpos))) goto tryagain;
 	}
 
 	return var;
@@ -3448,7 +3439,7 @@ llvm::Type* buildllvmtypefull(std::list<type>& refdecltypevector) {
 	return pcurrtype;
 }
 
-THREAD_LOCAL extern std::vector<llvm::BasicBlock*> pcurrblock;
+THREAD_LOCAL extern std::list<llvm::BasicBlock*> pcurrblock;
 
 void finalizedecl();
 
