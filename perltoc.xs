@@ -76,13 +76,43 @@ CODE:
     }
 
 void
-consumefilescopes1(U32 n)
+consumefilescopes1(U32 id)
 CODE:
     {
         //extern __thread U32 matchpos, basepos;
         //printf("print digit %d\n", baseposarg);
 	    //basepos = baseposarg;
-	    consumefilescopes(n);
+	    consumefilescopes(id);
+    }
+
+void
+registerthread1(U32 id)
+CODE:
+    {
+        //extern __thread U32 matchpos, basepos;
+        //printf("print digit %d\n", baseposarg);
+	    //basepos = baseposarg;
+	    //registerthread(id);
+    }
+
+void
+broadcast1(U32 thrid, U32 currid)
+CODE:
+    {
+        //extern __thread U32 matchpos, basepos;
+        //printf("print digit %d\n", baseposarg);
+	    //basepos = baseposarg;
+	    broadcast(thrid, currid);
+    }
+
+void
+flushfilescopes1(U32 maxthreads, U32 id)
+CODE:
+    {
+        //extern __thread U32 matchpos, basepos;
+        //printf("print digit %d\n", baseposarg);
+	    //basepos = baseposarg;
+	    flushfilescopes(maxthreads, id);
     }
 
 =pod

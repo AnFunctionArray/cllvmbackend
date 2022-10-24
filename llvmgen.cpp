@@ -78,6 +78,10 @@ extern "C" void __cdecl _wassert(
 //#include <oniguruma.h>
 #include <llvm/ADT/Hashing.h>
 #include <llvm/Support/FileSystem.h>
+#include <latch>
+#include <unordered_map>
+#include <thread>
+#include <condition_variable>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -99,7 +103,7 @@ extern "C" {
 }
 
 auto splicethings = [] (auto &reflist, auto &refsrc) {
-	reflist.splice(reflist.end(), refsrc, ++refsrc.begin(), refsrc.end());
+	reflist.splice(reflist.end(), refsrc, refsrc.begin(), refsrc.end());
 };
 
 
@@ -123,13 +127,28 @@ static llvm::IntegerType* (*getInt128Ty)(llvm::LLVMContext& C) = llvm::IntegerTy
 
 THREAD_LOCAL static std::list<std::list<var>> scopevar{ 1 };
 
+
+static std::unordered_map<unsigned int, var> scopevars_global;
+
+static std::bitset<0xFFFF> scopevars_state;
+
+
+THREAD_LOCAL std::list<std::list<var>> &scopevar_ = scopevar;
+
+
 static std::list<std::list<var>> *_scopevar;
+
+static std::mutex all;
+
+static std::list<std::list<::var>> dummypar{1};
+
+static std::list<::var> dummypar2{1};
 
 const std::list<struct var>::reverse_iterator obtainvalbyidentifier(std::string ident, bool push = true, bool bfindtypedef = false,
 	std::pair<
 		std::list<std::list<::var>>::reverse_iterator,
 		std::list<::var>::reverse_iterator
-	> rfromwhere = { scopevar.rbegin(), scopevar.rbegin()->rbegin() });
+	> rfromwhere = { dummypar.rbegin(), dummypar2.rbegin() });
 
 extern const struct type basicint, basicsz;
 
@@ -149,6 +168,8 @@ THREAD_LOCAL std::list<std::pair<std::list<std::string>, bool>> qualifsandtypes{
 
 THREAD_LOCAL static std::list<std::list<std::list<var>>> structorunionmembers{ 1 };
 
+static std::unordered_map<unsigned int, std::list<var>> structorunionmembers_global;
+
 static std::list<std::list<std::list<var>>> *_structorunionmembers;
 
 void startdeclaration(std::string typedefname);
@@ -160,8 +181,7 @@ struct currtypevectorbeingbuild_t {
 	decltype(p) endp;
 };
 
-THREAD_LOCAL std::list<currtypevectorbeingbuild_t> currtypevectorbeingbuild = {
-	{scopevar.begin(), currdecltypeenum::NORMAL} };
+THREAD_LOCAL std::list<currtypevectorbeingbuild_t> currtypevectorbeingbuild;
 
 std::list<std::pair<std::array<llvm::BranchInst*, 2>, llvm::BasicBlock*>>::iterator startifstatement(bool pop);
 
@@ -403,21 +423,15 @@ constexpr inline auto operator"" _h(char const* p, size_t) {
 	return stringhash(p);
 }
 
-THREAD_LOCAL static std::unique_ptr<llvm::Module> mainmodule;
-
-static std::unique_ptr<llvm::Module>*_mainmodule;
+THREAD_LOCAL static llvm::Module *mainmodule;
 
 llvm::DataLayout* pdatalayout;
 
 bool bareweinabrupt(bool barewe = false);
 
-THREAD_LOCAL static std::unique_ptr<llvm::LLVMContext> llvmctx = std::make_unique<llvm::LLVMContext>();
+THREAD_LOCAL static llvm::LLVMContext *llvmctx;
 
-static std::unique_ptr<llvm::LLVMContext>*_llvmctx;
-
-THREAD_LOCAL static std::unique_ptr <llvm::IRBuilder<>> llvmbuilder;
-
-static std::unique_ptr <llvm::IRBuilder<>> *_llvmbuilder;
+THREAD_LOCAL static llvm::IRBuilder<> *llvmbuilder;
 
 /*using iterenumtype = std::list<std::list<std::string>>::iterator;
 
@@ -805,8 +819,7 @@ struct var : valbase {
 
 	auto requestType() {
 		return pllvmtype ? pllvmtype : 
-			&mainmodule == _mainmodule ? buildllvmtypefull(type)
-			: pllvmtype = buildllvmtypefull(type);
+			pllvmtype = buildllvmtypefull(type);
 	}
 
 	std::list<::type> fixupTypeIfNeeded() {
@@ -822,15 +835,9 @@ struct var : valbase {
 		return type;
 	}
 	llvm::Value* requestValue() {
-		if ((value == nullptr 
-			|| &value->getContext() != llvmctx.get())
+		if ((value == nullptr)
 			&& linkage != "typedef")
 			addvar(*this);
-		if (&mainmodule == _mainmodule) {
-			auto valcopy = value;
-			value = nullptr;
-			return valcopy;
-		}
 		return value;
 	}
 	std::string linkage;
@@ -2268,40 +2275,49 @@ static val* plastnotfound;
 extern "C" int
 parse_filescope_var(const char *what, size_t sizewhat, int flags, unsigned long currpos, unsigned long continuefrom);
 
-extern "C" unsigned long getcurrpos();
+extern "C" unsigned int evalperlexpruv(const char *what);
 
 unsigned long parse_file_scope_ident(std::string ident, unsigned long lastpos, unsigned long currpos) {
-		decltype(scopevar) tmpscopevar;
-		decltype(currtypevectorbeingbuild) tmpcurrtypevectorbeingbuild;
-		decltype(structorunionmembers) tmpstructorunionmembers;
-		decltype(enums) tmpenums;
-		decltype(pcurrblock) tmppcurrblock = std::move(pcurrblock);
 
-		splicethings(tmpscopevar, scopevar);
-		splicethings(tmpcurrtypevectorbeingbuild, currtypevectorbeingbuild);
-		splicethings(tmpstructorunionmembers, structorunionmembers);
-		splicethings(tmpenums, enums);
 
 		currpos = parse_filescope_var(ident.c_str(), ident.size(), 0, lastpos, currpos);
-			
-		splicethings(scopevar, tmpscopevar);
-		splicethings(currtypevectorbeingbuild, tmpcurrtypevectorbeingbuild);
-		splicethings(structorunionmembers, tmpstructorunionmembers);
-		splicethings(enums, tmpenums);
-		pcurrblock = std::move(tmppcurrblock);
+
+		if(currpos) {
+
+			auto scopevarlastelem = std::move(scopevar.back().back());
+
+			scopevar.back().pop_back();
+				
+			scopevar.front().push_back(std::move(scopevarlastelem));
+
+			scopevar.front().back().firstintroduced = nullptr;
+		}
 
 		return currpos;
 }
 
+static unsigned currtop;
+
+static std::mutex maskchn;
+
+static std::condition_variable condvar;
+
+static std::mutex maskupd;
+
+static std::condition_variable maskupdconvar;
+
 const std::list<::var>::reverse_iterator obtainvalbyidentifier(std::string ident, bool push, bool bfindtypedef,
 	std::pair<std::list<std::list<::var>>::reverse_iterator, std::list<::var>::reverse_iterator> rfromwhere) {
 
-	unsigned long currpos = 0;
-	const unsigned long long lastpos = getcurrpos();
+	//unsigned long currpos = 0;
+	//const unsigned long long lastpos = getcurrpos();
 
 	std::list<::var>::reverse_iterator var{};
 
-	var = rfromwhere.first->rend();
+	unsigned sofar = evalperlexpruv("scalar($nfilescopesrequested)") - 1;
+
+	THREAD_LOCAL static std::list<::var> tmps;
+
 tryagain:
 	if (push && scopevar.size() > 1) {
 		auto& currfunctype = currfunc->type.front().spec.func.parametertypes_list.front();
@@ -2316,7 +2332,7 @@ tryagain:
 		}
 	}
 
-	for (std::list<std::list<::var>>::reverse_iterator iterscope = rfromwhere.first; iterscope != scopevar.rend(); ++iterscope) {
+	for (std::list<std::list<::var>>::reverse_iterator iterscope = rfromwhere.first == dummypar.rbegin() ? scopevar.rbegin() : rfromwhere.first; iterscope != scopevar.rend(); ++iterscope) {
 		for (std::list<::var>::reverse_iterator itervar = iterscope == rfromwhere.first ? rfromwhere.second : iterscope->rbegin(); itervar != iterscope->rend(); ++itervar) {
 			if (itervar->identifier == ident && (bfindtypedef == (itervar->linkage == "typedef"))) {
 				var = itervar;
@@ -2324,10 +2340,36 @@ tryagain:
 			}
 		}
 	}
-	if (push) {
-	undef: {
+	for (std::list<::var>::reverse_iterator itervar = tmps.rbegin(); itervar != tmps.rend(); ++itervar) {
+		if (itervar->identifier == ident && (bfindtypedef == (itervar->linkage == "typedef"))) {
+			var = itervar;
+			goto found;
+		}
+	}
+	printf("waiting for %d\n", sofar);
+	
+	do {
+		//std::unique_lock lck{all};
+		if (scopevars_global.contains(stringhash(ident.c_str())) && (bfindtypedef == (scopevars_global[stringhash(ident.c_str())].linkage == "typedef"))) {
+			tmps.push_back(scopevars_global[stringhash(ident.c_str())]);
+			var = tmps.rbegin();
+			goto found;
+		}
 
-		if ((currpos = parse_file_scope_ident(ident, lastpos, currpos))) goto tryagain;
+		{
+			std::unique_lock lck{maskupd};
+
+			if (!(currtop < sofar)) break;
+
+			maskupdconvar.wait(lck);
+		}
+	}
+	while (1);
+	{
+	undef: 
+	if (push) {
+
+		//if ((currpos = parse_file_scope_ident(ident, lastpos, currpos))) goto tryagain;
 
 		std::cout << "not found: " << ident << std::endl;
 
@@ -2654,7 +2696,7 @@ void addvar(var& lastvar, llvm::Constant* pInitializer) {
 			lastvar.value = nullptr;
 			printtype(lastvar.requestType(), lastvar.identifier);
 			bool bmangle = false;
-			if ((pfuncother = obtainpreviosfunction(lastvar.identifier)) != scopevar.front().rend()) {
+			/*if ((pfuncother = obtainpreviosfunction(lastvar.identifier)) != scopevar.front().rend()) {
 				if (!comparefunctiontypeparameters(pfuncother->type.front(), lastvar.type.front())) {
 					pfuncother->value->setName(pfuncother->identifier + mangle(pfuncother->type));
 					//overloadflag[stringhash(lastvar.identifier.c_str())] = true;
@@ -2663,7 +2705,7 @@ void addvar(var& lastvar, llvm::Constant* pInitializer) {
 				else if (dyn_cast<llvm::Function> (pfuncother->value)->getName().contains('@')) {
 					bmangle = true;
 				}
-			}
+			}*/
 			std::string mangledfnname = bmangle ? lastvar.identifier + mangle(lastvar.type) : lastvar.identifier;
 			lastvar.value = mainmodule->getFunction(mangledfnname);
 			if (!lastvar.value) {
@@ -3267,8 +3309,8 @@ void fixupstructype(std::list<::var>* var) {
 const std::list<::var>* getstructorunion(bascitypespec& basic) {
 	std::list<::var>* var = nullptr;
 
-	unsigned long currpos = 0;
-	const unsigned long long lastpos = getcurrpos();
+	//unsigned long currpos = 0;
+	//const unsigned long long lastpos = getcurrpos();
 
 	std::string ident = basic.basic[3];
 
@@ -3285,6 +3327,41 @@ tryagain:
 
 			if (iter != scope.rend())
 				return var = &*iter, true;
+
+			THREAD_LOCAL static std::list<std::list<::var>> tmps;
+
+			iter = std::find_if(
+				tmps.rbegin(), tmps.rend(),
+				[&](const std::list<::var>& scopevar) {
+					return scopevar.front().identifier == ident &&
+						scopevar.front().type.front().spec.basicdeclspec.basic[0] == basic.basic[0];
+				});
+
+			if (iter != tmps.rend())
+				return var = &*iter, true;
+
+			unsigned sofar = evalperlexpruv("scalar($nfilescopesrequested)") - 1;
+
+			printf("waiting for %d\n", sofar);
+			
+			do {
+				//std::unique_lock lck{all};
+				if (structorunionmembers_global.contains(stringhash(ident.c_str()))) {
+					tmps.push_back(structorunionmembers_global[stringhash(ident.c_str())]);
+					var = &tmps.back();
+					return true;
+				}
+
+				{
+					std::unique_lock lck{maskupd};
+
+					if (!(currtop < sofar)) break;
+
+					maskupdconvar.wait(lck);
+				}
+			}
+			while (true);
+
 			return false;
 		});
 
@@ -3292,10 +3369,6 @@ tryagain:
 
 	if (var && !var->front().pllvmtype)
 		fixupstructype(var);
-	else {
-
-		if ((currpos = parse_file_scope_ident(ident, lastpos, currpos))) goto tryagain;
-	}
 
 	return var;
 }
@@ -3448,7 +3521,6 @@ THREAD_LOCAL static std::list<std::pair<llvm::SwitchInst*, llvm::BasicBlock*>> c
 llvm::BranchInst* splitbb(const char* identifier, size_t szident);
 
 DLL_EXPORT void beginscope() {
-	assert(&mainmodule != _mainmodule);
 	bool beginofafnuc = scopevar.size() == 1;
 	if (beginofafnuc) {
 		std::cout << "begin func at @" << &scopevar << std::endl;
@@ -3756,6 +3828,8 @@ DLL_EXPORT void endfunctioncall() {
 	//assert(calleevalntype.value->getType()->isPointerTy());
 
 	if (calleevalntype.type.front().uniontype != type::POINTER) {
+
+		goto rest;
 		
 		std::list<std::pair<std::list<::var>::reverse_iterator, int>> revfunsrank;
 
@@ -3927,7 +4001,7 @@ DLL_EXPORT void endqualifs(std::unordered_map<unsigned, std::string>&& hashes) {
 	if (!nontypedeflinkage.empty()) lastvar.linkage = nontypedeflinkage;
 
 	if (std::all_of(refbasic.begin(), refbasic.end(), [](const std::string& elem) {return elem.empty(); }))
-		if (lastvar.firstintroduced == nullptr) refbasic[1] = "int";
+		if (lastvar.firstintroduced == nullptr, true) refbasic[1] = "int";
 		else throw std::runtime_error{ "decl with no basic info" };
 
 	if (ranges::contains(std::array{ "struct", "union", "enum" }, refbasic[0]))
@@ -3946,7 +4020,7 @@ DLL_EXPORT void endqualifs(std::unordered_map<unsigned, std::string>&& hashes) {
 			case "enum"_h:
 				lastvar.type.back() = basicint ;
 		}
-
+		
 	lastvar.fixupTypeIfNeeded();
 							/*					  else
 							if (0) case "enum"_h:
@@ -4083,46 +4157,166 @@ static pthread_mutex_t mutexshared;
 static pthread_mutexattr_t mutexsharedattr;*/
 
 const auto initthreadmods = []{
-	_mainmodule = &mainmodule;
 	_scopevar = &scopevar;
 	_structorunionmembers = &structorunionmembers;
 	_enums = &enums;
-	_llvmctx = &llvmctx;
-	_llvmbuilder = &llvmbuilder;
 	return nullptr;
 }();
-static std::mutex syncstuff;
-static std::vector<std::pair<unsigned, decltype(scopevar)::value_type::iterator>> consumablescopevars;
-static std::vector<std::pair<unsigned, decltype(structorunionmembers)::value_type::iterator>> consumablestructorunionmembers;
-static std::vector<std::pair<unsigned, decltype(enums)::value_type::iterator>> consumableenums;
+static std::mutex syncf;
+static std::list<std::pair<unsigned, decltype(scopevar)::value_type>> consumablescopevars;
+static std::list<std::pair<unsigned, decltype(structorunionmembers)::value_type>> consumablestructorunionmembers;
+static std::list<std::pair<unsigned, decltype(enums)::value_type>> consumableenums;
 
-DLL_EXPORT void flushfilescopes(unsigned nthreads) {
-	syncstuff.lock();
-	consumablescopevars.push_back({nthreads, --scopevar.front().end()});
-	consumablestructorunionmembers.push_back({nthreads, --structorunionmembers.front().end()});
-	consumableenums.push_back({nthreads, --enums.front().end()});
-	syncstuff.unlock();
+static THREAD_LOCAL decltype(scopevar)::value_type::iterator consumablescopevarstopushlast;
+static THREAD_LOCAL decltype(structorunionmembers)::value_type::iterator structorunionmemberstopushlast;
+static THREAD_LOCAL decltype(enums)::value_type::iterator enumstopushlast;
+
+void llvminit_thread();
+
+
+DLL_EXPORT void llvminit() {
+	//llvminit_thread();
+	std::thread{[]{
+		while(1) {
+			std::unique_lock lck{maskchn};
+
+			{
+
+				std::unique_lock lck2{maskupd};
+
+				condvar.wait(lck);
+
+				while(scopevars_state.test(currtop)) ++currtop;
+			}
+
+			printf("new top %u\n", currtop);
+
+			maskupdconvar.notify_all();
+		}
+	}}.detach();
 }
 
-DLL_EXPORT void consumefilescopes(unsigned i) {
-	syncstuff.lock();
-	scopevar.front().insert(scopevar.front().end(), (i > 0 ? ++decltype(scopevar)::value_type::iterator{consumablescopevars[i - 1].second} : _scopevar->front().begin()), ++decltype(scopevar)::value_type::iterator{consumablescopevars[i].second});
-	structorunionmembers.front().insert(structorunionmembers.front().end(), (i > 0 ? ++decltype(structorunionmembers)::value_type::iterator{consumablestructorunionmembers[i - 1].second} : _structorunionmembers->front().begin()), ++decltype(structorunionmembers)::value_type::iterator{consumablestructorunionmembers[i].second});
-	enums.front().insert(enums.front().end(), (i > 0 ? ++decltype(enums)::value_type::iterator{consumableenums[i - 1].second} : _enums->front().begin()), ++decltype(enums)::value_type::iterator{consumableenums[i].second});
-	syncstuff.unlock();
+void llvminit_thread() {
+	currtypevectorbeingbuild = { {scopevar.begin(), currdecltypeenum::NORMAL} };
+}
+
+DLL_EXPORT void broadcast(unsigned thrid, unsigned pos) {
+	//scopevars_global[pos] = {scopevar.front(), structorunionmembers.front()};
+
+	static std::mutex boradcastingstrc;
+	static std::mutex boradcastingscope;
+
+	//std::unique_lock lck{all};
+
+	THREAD_LOCAL static bool hasboolintied = false;
+	THREAD_LOCAL static bool hasboolintiedscope = false;
+
+	//boradcastingscope.lock();
+
+	for(auto first = hasboolintiedscope ? ++consumablescopevarstopushlast : scopevar.front().begin();  first != scopevar.front().end(); ++first) {
+		if(!first->identifier.empty()) {
+			std::unique_lock lck{boradcastingscope};
+			scopevars_global[stringhash(first->identifier.c_str())] = *first;
+		}
+	}
+
+	//boradcastingscope.unlock();
+
+	hasboolintiedscope = !scopevar.front().empty();
+
+	consumablescopevarstopushlast = --scopevar.front().end();
+
+	//boradcastingstrc.lock();
+
+	for(auto first = hasboolintied ? ++structorunionmemberstopushlast : structorunionmembers.front().begin();  first != structorunionmembers.front().end(); ++first) {
+		if(!first->front().identifier.empty()) {
+			std::unique_lock lck{boradcastingstrc};
+			structorunionmembers_global[stringhash(first->front().identifier.c_str())] = *first;
+		}
+	}
+
+	//boradcastingstrc.unlock();
+
+	hasboolintied = !structorunionmembers.front().empty();
+
+	structorunionmemberstopushlast = --structorunionmembers.front().end();
+	
+	if (thrid, true) {
+		printf("setting pos %d\n", pos);
+		std::unique_lock lck{maskchn};
+		scopevars_state.set(pos);
+		condvar.notify_one();
+	}
+}
+
+DLL_EXPORT void flushfilescopes(unsigned n, unsigned id) {
+	static bool storedscopevar = false;
+	static bool storedsstructs = false;
+	static bool storedsenums = false;
+	for (auto i : ranges::iota_view<unsigned, unsigned>(0u, n)) {
+		syncf.lock();
+		consumablescopevars.push_back({id, {storedscopevar ? ++consumablescopevarstopushlast : scopevar.front().begin(), scopevar.front().end()}});
+		consumablestructorunionmembers.push_back({id, {storedsstructs ? ++structorunionmemberstopushlast : structorunionmembers.front().begin(), structorunionmembers.front().end()}});
+		//consumableenums.push_back({id, {storedsenums ? ++enumstopushlast : enums.front().begin(), enums.front().end()}});
+
+		syncf.unlock();
+	}
+	syncf.lock();
+	storedscopevar = scopevar.size() > 0;
+	consumablescopevarstopushlast = --scopevar.front().end();
+	storedsstructs = consumablestructorunionmembers.size() > 0;
+	structorunionmemberstopushlast = --structorunionmembers.front().end();
+	syncf.unlock();
+	//storedsenums = enums.size() > 0;
+	//enumstopushlast = --enums.front().end();
+}
+
+DLL_EXPORT void consumefilescopes(unsigned id) {
+
+	auto finder =  [=] (auto &from) {
+		return std::find_if(
+			from.rbegin(), from.rend(),
+			[=](auto& param) { return param.first == id; });
+	};
+	
+	syncf.lock();
+
+	auto findconsscopes = finder(consumablescopevars);
+	auto findconsstrcs = finder(consumablestructorunionmembers);
+	auto findconsenms = finder(consumableenums);
+
+	splicethings(scopevar.front(), findconsscopes->second);
+	splicethings(structorunionmembers.front(), findconsstrcs->second);
+	//splicethings(enums.front(), findconsenms->second);
+
+	++findconsscopes == consumablescopevars.rend() ?
+		consumablescopevars.pop_front() : (void)consumablescopevars.erase(findconsscopes.base());
+
+	++findconsstrcs == consumablestructorunionmembers.rend() ?
+		consumablestructorunionmembers.pop_front() : (void)consumablestructorunionmembers.erase(findconsstrcs.base());
+
+	//++findconsenms == consumableenums.rend() ?
+	//	consumableenums.pop_front() : (void)consumableenums.erase(findconsenms.base());
+
+	syncf.unlock();
 }
 
 DLL_EXPORT void startmodule(const char* modulename, size_t szmodulename) {
 	/*pthread_mutexattr_init(&mutexsharedattr);
 	pthread_mutexattr_setpshared(&mutexsharedattr, 1);
 	pthread_mutex_init(&mutexshared, &mutexsharedattr);*/
-	llvmbuilder = std::make_unique<llvm::IRBuilder<>>((*llvmctx));
-	mainmodule = std::make_unique<llvm::Module>(modname = std::string{modulename, szmodulename}, (*llvmctx) );
+	llvminit_thread();
+	static THREAD_LOCAL llvm::LLVMContext llvmctxobj{};
+	llvmctx = &llvmctxobj;
+	static THREAD_LOCAL llvm::IRBuilder llvmbuilderobj{llvmctxobj};
+	llvmbuilder = &llvmbuilderobj;
+	static THREAD_LOCAL llvm::Module llvmmainmodobj{modname = std::string{modulename, szmodulename}, (*llvmctx)};
+	mainmodule = &llvmmainmodobj;
 
 	if(const char* datalayout = getenv("DATA_LAYOUT"))
 		pdatalayout = new llvm::DataLayout{ datalayout };
 	else
-		pdatalayout = new llvm::DataLayout{ mainmodule.get()};
+		pdatalayout = new llvm::DataLayout{ mainmodule};
 
 	static const char* inttynames[] = { "Int16", "Int32", "Int64", "Int128" };
 
@@ -4136,10 +4330,10 @@ DLL_EXPORT void startmodule(const char* modulename, size_t szmodulename) {
 	(*llvmctx).setOpaquePointers(true);
 	mainmodule->setDataLayout(*pdatalayout);
 
-	/*if(getenv("SILENT"))
+	if(getenv("SILENT"))
 		std::cout.rdbuf(NULL);
 
-	if (const char* preplaypath = getenv("REPLAY")) {
+	/*if (const char* preplaypath = getenv("REPLAY")) {
 		std::ifstream replay{ preplaypath, std::ifstream::binary };
 
 		unsigned int hash;
@@ -4207,13 +4401,13 @@ DLL_EXPORT void dumpmodule();
 
 DLL_EXPORT void endmodule() {
 	dumpmodule();
-	areweinuser = 1;
-	if (!sigsetjmp(docalljmp, 1)) {
-		llvmbuilder.release();
-		mainmodule.release();
-		llvmctx.release();
-	}
-	areweinuser = 0;
+	//areweinuser = 1;
+	//if (!sigsetjmp(docalljmp, 1)) {
+		//llvmbuilder.release();
+		//mainmodule.release();
+		//llvmctx.release();
+	//}
+	//areweinuser = 0;
 	return;
 
 	//endmoduleabrupt();
@@ -4222,17 +4416,17 @@ DLL_EXPORT void endmodule() {
 DLL_EXPORT __thread unsigned int matchpos;
 
 DLL_EXPORT void dumpmodule() {
-	if (getenv("THREADING")) {
+	/*if (getenv("THREADING")) {
 		mutexwork.lock();
 		endwork = true;
 		mutexwork.unlock();
 		condwake.notify_one();
 		//pthread_join(thread, nullptr);
-	}
+	}*/
 	//if (scopevar.front().size()) if (auto& fun = scopevar.front().back(); fun.type.front().uniontype == type::FUNCTION) {
 	//	if (fun.value) if (auto llvmfun = dyn_cast<llvm::Function>(fun.value); !llvmfun->isDeclaration()) {
-			areweinuser = 1;
-			if (!sigsetjmp(docalljmp, 1)) {
+			/*areweinuser = 1;
+			if (!sigsetjmp(docalljmp, 1)) {*/
 				//pthread_mutex_lock(&mutexshared);
 				std::cout << "Dumping " << mainmodule->getName().str() << " ..." << std::endl;
 				std::error_code code{};
@@ -4242,10 +4436,10 @@ DLL_EXPORT void dumpmodule() {
 								code };
 				if (!record.is_open()) {
 					llvm::WriteBitcodeToFile(*mainmodule, output);
-					mainmodule->print(outputll, nullptr);
+					//mainmodule->print(outputll, nullptr);
 				}
-			}
-			areweinuser = 0;
+			//}
+			//areweinuser = 0;
 		//}
 		//endwork = true;
 		//dyn_cast<llvm::Function>(currfunc->value)->deleteBody();
@@ -4260,7 +4454,7 @@ DLL_EXPORT void waitforthread() {
 	condwake.wait(lock);
 }
 DLL_EXPORT void initthread() {
-	llvmbuilder = std::make_unique<llvm::IRBuilder<>>((*llvmctx));
+	/*llvmbuilder = std::make_unique<llvm::IRBuilder<>>((*llvmctx));
 	mainmodule = std::make_unique<llvm::Module>(std::string{ "" }, (*llvmctx));
 
 	(*llvmctx).setOpaquePointers(true);
@@ -4270,7 +4464,7 @@ DLL_EXPORT void initthread() {
 	structorunionmembers = *_structorunionmembers;
 	enums = *_enums;
 
-	currtypevectorbeingbuild = { {scopevar.begin(), currdecltypeenum::NORMAL} };
+	currtypevectorbeingbuild = { {scopevar.begin(), currdecltypeenum::NORMAL} };*/
 
 	//condwake.notify_one();
 }
@@ -5118,8 +5312,10 @@ rest:
 	if (!exponent.empty())
 		finalnumber += "E" + exponent_sign + exponent;
 
+	llvm::Constant *pconstant = llvm::ConstantFP::get(pllvmtype, hashes["nan"_h].empty() ? floatlit :  llvm::APFloat::getNaN(floatsem));
+
 	auto status = floatlit.convertFromString(finalnumber, llvm::APFloatBase::rmNearestTiesToEven);
-	immidiates.push_back({ currtype, llvm::ConstantFP::get(pllvmtype, hashes["nan"_h].empty() ? floatlit : floatlit.getNaN(floatsem)) });
+	immidiates.push_back({ currtype, pconstant });
 }
 #if 0
 virtual void finish_float_literal_69() {

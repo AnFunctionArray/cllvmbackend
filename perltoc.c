@@ -6,7 +6,7 @@
  *
  */
 
-#line 1 "/Users/sasho/cllvmbackend/perltoc.xs"
+#line 1 "/Users/sasho/cllvmbackendlocal/perltoc.xs"
 #define PERL_NO_GET_CONTEXT
 #define PERL_EUPXS_ALWAYS_EXPORT
 #include "EXTERN.h"
@@ -17,7 +17,7 @@
 
 #include "./main.h"
 
-#line 21 "/Users/sasho/cllvmbackend/perltoc.c"
+#line 21 "/Users/sasho/cllvmbackendlocal/perltoc.c"
 #ifndef PERL_UNUSED_VAR
 #  define PERL_UNUSED_VAR(var) if (0) var = var
 #endif
@@ -161,7 +161,7 @@ S_croak_xs_usage(const CV *const cv, const char *const params)
 #  define newXS_deffile(a,b) Perl_newXS_deffile(aTHX_ a,b)
 #endif
 
-#line 165 "/Users/sasho/cllvmbackend/perltoc.c"
+#line 165 "/Users/sasho/cllvmbackendlocal/perltoc.c"
 
 XS_EUPXS(XS__startmatching); /* prototype to pass -Wmissing-prototypes */
 XS_EUPXS(XS__startmatching)
@@ -170,7 +170,7 @@ XS_EUPXS(XS__startmatching)
     if (items != 4)
        croak_xs_usage(cv,  "in, in1, in2, in3");
     {
-#line 18 "/Users/sasho/cllvmbackend/perltoc.xs"
+#line 18 "/Users/sasho/cllvmbackendlocal/perltoc.xs"
     STRLEN len;
     STRLEN secondlen;
     STRLEN thirdlen;
@@ -179,7 +179,7 @@ XS_EUPXS(XS__startmatching)
     char* s1;
     char* s2;
     char* s3;
-#line 183 "/Users/sasho/cllvmbackend/perltoc.c"
+#line 183 "/Users/sasho/cllvmbackendlocal/perltoc.c"
 	extern	RETVAL;
 	SV *	in = ST(0)
 ;
@@ -189,7 +189,7 @@ XS_EUPXS(XS__startmatching)
 ;
 	SV *	in3 = ST(3)
 ;
-#line 27 "/Users/sasho/cllvmbackend/perltoc.xs"
+#line 27 "/Users/sasho/cllvmbackendlocal/perltoc.xs"
     {
         int secondmain(char *subject, size_t szsubject, char *pattern, size_t szpattern, char *modulename, size_t szmodulename,
             char*, size_t);
@@ -199,7 +199,7 @@ XS_EUPXS(XS__startmatching)
         s3 = SvPVutf8(in3, fourthlen);
         secondmain(s, len, s1, secondlen, s2, thirdlen, s3, fourthlen);
     }
-#line 203 "/Users/sasho/cllvmbackend/perltoc.c"
+#line 203 "/Users/sasho/cllvmbackendlocal/perltoc.c"
     }
     XSRETURN(1);
 }
@@ -233,13 +233,13 @@ XS_EUPXS(XS__callout)
 		}
 	} STMT_END
 ;
-#line 59 "/Users/sasho/cllvmbackend/perltoc.xs"
+#line 59 "/Users/sasho/cllvmbackendlocal/perltoc.xs"
     {
         extern U32 do_callout(SV* in, HV* hash, U32 pos);
 
         RETVAL = do_callout(in, hash, pos);
     }
-#line 243 "/Users/sasho/cllvmbackend/perltoc.c"
+#line 243 "/Users/sasho/cllvmbackendlocal/perltoc.c"
 	XSprePUSH; PUSHu((UV)RETVAL);
     }
     XSRETURN(1);
@@ -255,14 +255,14 @@ XS_EUPXS(XS__initthread1)
     {
 	U32	baseposarg = (unsigned long)SvUV(ST(0))
 ;
-#line 71 "/Users/sasho/cllvmbackend/perltoc.xs"
+#line 71 "/Users/sasho/cllvmbackendlocal/perltoc.xs"
     {
         extern __thread U32 matchpos, basepos;
         //printf("print digit %d\n", baseposarg);
 	    basepos = baseposarg;
 	    initthread();
     }
-#line 266 "/Users/sasho/cllvmbackend/perltoc.c"
+#line 266 "/Users/sasho/cllvmbackendlocal/perltoc.c"
     }
     XSRETURN_EMPTY;
 }
@@ -273,18 +273,88 @@ XS_EUPXS(XS__consumefilescopes1)
 {
     dVAR; dXSARGS;
     if (items != 1)
-       croak_xs_usage(cv,  "n");
+       croak_xs_usage(cv,  "id");
     {
-	U32	n = (unsigned long)SvUV(ST(0))
+	U32	id = (unsigned long)SvUV(ST(0))
 ;
-#line 81 "/Users/sasho/cllvmbackend/perltoc.xs"
+#line 81 "/Users/sasho/cllvmbackendlocal/perltoc.xs"
     {
         //extern __thread U32 matchpos, basepos;
         //printf("print digit %d\n", baseposarg);
 	    //basepos = baseposarg;
-	    consumefilescopes(n);
+	    consumefilescopes(id);
     }
-#line 288 "/Users/sasho/cllvmbackend/perltoc.c"
+#line 288 "/Users/sasho/cllvmbackendlocal/perltoc.c"
+    }
+    XSRETURN_EMPTY;
+}
+
+
+XS_EUPXS(XS__registerthread1); /* prototype to pass -Wmissing-prototypes */
+XS_EUPXS(XS__registerthread1)
+{
+    dVAR; dXSARGS;
+    if (items != 1)
+       croak_xs_usage(cv,  "id");
+    {
+	U32	id = (unsigned long)SvUV(ST(0))
+;
+#line 91 "/Users/sasho/cllvmbackendlocal/perltoc.xs"
+    {
+        //extern __thread U32 matchpos, basepos;
+        //printf("print digit %d\n", baseposarg);
+	    //basepos = baseposarg;
+	    //registerthread(id);
+    }
+#line 310 "/Users/sasho/cllvmbackendlocal/perltoc.c"
+    }
+    XSRETURN_EMPTY;
+}
+
+
+XS_EUPXS(XS__broadcast1); /* prototype to pass -Wmissing-prototypes */
+XS_EUPXS(XS__broadcast1)
+{
+    dVAR; dXSARGS;
+    if (items != 2)
+       croak_xs_usage(cv,  "thrid, currid");
+    {
+	U32	thrid = (unsigned long)SvUV(ST(0))
+;
+	U32	currid = (unsigned long)SvUV(ST(1))
+;
+#line 101 "/Users/sasho/cllvmbackendlocal/perltoc.xs"
+    {
+        //extern __thread U32 matchpos, basepos;
+        //printf("print digit %d\n", baseposarg);
+	    //basepos = baseposarg;
+	    broadcast(thrid, currid);
+    }
+#line 334 "/Users/sasho/cllvmbackendlocal/perltoc.c"
+    }
+    XSRETURN_EMPTY;
+}
+
+
+XS_EUPXS(XS__flushfilescopes1); /* prototype to pass -Wmissing-prototypes */
+XS_EUPXS(XS__flushfilescopes1)
+{
+    dVAR; dXSARGS;
+    if (items != 2)
+       croak_xs_usage(cv,  "maxthreads, id");
+    {
+	U32	maxthreads = (unsigned long)SvUV(ST(0))
+;
+	U32	id = (unsigned long)SvUV(ST(1))
+;
+#line 111 "/Users/sasho/cllvmbackendlocal/perltoc.xs"
+    {
+        //extern __thread U32 matchpos, basepos;
+        //printf("print digit %d\n", baseposarg);
+	    //basepos = baseposarg;
+	    flushfilescopes(maxthreads, id);
+    }
+#line 358 "/Users/sasho/cllvmbackendlocal/perltoc.c"
     }
     XSRETURN_EMPTY;
 }
@@ -297,21 +367,21 @@ XS_EUPXS(XS__startmodule)
     if (items != 1)
        croak_xs_usage(cv,  "in");
     {
-#line 100 "/Users/sasho/cllvmbackend/perltoc.xs"
+#line 130 "/Users/sasho/cllvmbackendlocal/perltoc.xs"
     STRLEN len;
     char* s;
-#line 304 "/Users/sasho/cllvmbackend/perltoc.c"
+#line 374 "/Users/sasho/cllvmbackendlocal/perltoc.c"
 	extern	RETVAL;
 	SV *	in = ST(0)
 ;
-#line 103 "/Users/sasho/cllvmbackend/perltoc.xs"
+#line 133 "/Users/sasho/cllvmbackendlocal/perltoc.xs"
     {
         void startmodule(const char* modulename, size_t szmodulename);
         s = SvPVutf8(in, len);
 
         startmodule(s, len);
     }
-#line 315 "/Users/sasho/cllvmbackend/perltoc.c"
+#line 385 "/Users/sasho/cllvmbackendlocal/perltoc.c"
     }
     XSRETURN(1);
 }
@@ -348,6 +418,9 @@ XS_EXTERNAL(boot_AnFunctionArray)
         (void)newXSproto_portable("callout", XS__callout, file, "$$$");
         (void)newXSproto_portable("initthread1", XS__initthread1, file, "$");
         (void)newXSproto_portable("consumefilescopes1", XS__consumefilescopes1, file, "$");
+        (void)newXSproto_portable("registerthread1", XS__registerthread1, file, "$");
+        (void)newXSproto_portable("broadcast1", XS__broadcast1, file, "$$");
+        (void)newXSproto_portable("flushfilescopes1", XS__flushfilescopes1, file, "$$");
         (void)newXSproto_portable("startmodule", XS__startmodule, file, "$");
 #if PERL_VERSION_LE(5, 21, 5)
 #  if PERL_VERSION_GE(5, 9, 0)

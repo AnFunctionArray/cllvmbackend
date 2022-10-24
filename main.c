@@ -249,7 +249,8 @@ struct retgetnamevalue getnamevalue(const char* nametoget) {
 
 XS__startmatching(), XS__callout(), XS__startmodule(), boot_DynaLoader(), endmodule()
 , XS__initthread1(), waitforthread(), preparethread(), XS__startmetaregex(), dumpabrupt(),
-endmoduleabrupt(), dumpmodule(), flushfilescopes(), XS__consumefilescopes1();
+endmoduleabrupt(), dumpmodule(), XS__flushfilescopes1(), XS__consumefilescopes1(),
+XS__registerthread1(), XS__broadcast1(), resetbufferthr();
 
 static void
 xs_init(pTHX)
@@ -266,8 +267,11 @@ xs_init(pTHX)
 	//newXS("preparethread", preparethread, __FILE__);
 	newXS("waitforthread", waitforthread, __FILE__);
 	newXS("startmodule", XS__startmodule, __FILE__);
-	newXS("flushfilescopes", flushfilescopes, __FILE__);
+	newXS("flushfilescopes", XS__flushfilescopes1, __FILE__);
 	newXS("consumefilescopes", XS__consumefilescopes1, __FILE__);
+	newXS("registerthread", XS__registerthread1, __FILE__);
+	newXS("broadcast", XS__broadcast1, __FILE__);
+	//newXS("resetbuffer", resetbufferthr, __FILE__);
 }
 
 PerlInterpreter* my_perl; /***    The Perl interpreter    ***/
@@ -304,30 +308,33 @@ __thread int initial;
 
 __thread int areweinuser;
 
-unsigned long getcurrpos() {
-	SV *currpos = eval_pv("pos()", FALSE);
+unsigned int evalperlexpruv(const char *what) {
+	SV *currpos = eval_pv(what, FALSE);
 	unsigned long pos =  SvUV(currpos);
-	sv_free(currpos);
+	//sv_free(currpos);
 	return pos;
 }
 
 void handler1(int sig) {
-	printf("signal %d @ %lu\n", sig, getcurrpos());
+	printf("signal %d @ %lu\n", sig, evalperlexpruv("pos()"));
 	//dumpabrupt();
 	//exit(0);
+	raise(sig);
 	/*if (!initial)
 		call_argv("decnthreads", G_DISCARD | G_NOARGS, NULL);
 	else {
 		call_argv("waitforthreads", G_DISCARD | G_NOARGS, NULL);
 	}*/
 	//pthread_exit(NULL);
-	if(areweinuser)
+	/*if(areweinuser)
 		siglongjmp(docalljmp, 1);
 	else {
 		printf("unhandled\n");
 		//exit(-1);
 		die("unhandled");
-	}
+	}*/
+
+	siglongjmp(docalljmp, 1);
 }
 
 int
@@ -432,6 +439,7 @@ int main(int argc, char** argv, char** env)
 	perl_parse(my_perl, xs_init, argc, argv, NULL);
 	//foutput = fopen("output.txt", "wt");
 	//foutput2 = fopen("output2.txt", "wt");
+	llvminit();
 	perl_run(my_perl);
 	//fflush(foutput);
 	//fflush(foutput2);
