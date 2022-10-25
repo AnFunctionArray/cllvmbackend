@@ -250,7 +250,7 @@ struct retgetnamevalue getnamevalue(const char* nametoget) {
 XS__startmatching(), XS__callout(), XS__startmodule(), boot_DynaLoader(), endmodule()
 , XS__initthread1(), waitforthread(), preparethread(), XS__startmetaregex(), dumpabrupt(),
 endmoduleabrupt(), dumpmodule(), XS__flushfilescopes1(), XS__consumefilescopes1(),
-XS__registerthread1(), XS__broadcast1(), resetbufferthr();
+XS__registerthread1(), XS__broadcast1(), resetbufferthr(), XS__updateavailidents1();
 
 static void
 xs_init(pTHX)
@@ -272,6 +272,7 @@ xs_init(pTHX)
 	newXS("registerthread", XS__registerthread1, __FILE__);
 	newXS("broadcast", XS__broadcast1, __FILE__);
 	//newXS("resetbuffer", resetbufferthr, __FILE__);
+	newXS("updateavailidents", XS__updateavailidents1, __FILE__);
 }
 
 PerlInterpreter* my_perl; /***    The Perl interpreter    ***/
@@ -338,11 +339,9 @@ void handler1(int sig) {
 }
 
 int
-parse_filescope_var(what, sizewhat, flags, currpos, continuefrom)
+getidentid(what, sizewhat)
 const char *what;
 size_t sizewhat;
-int flags;
-unsigned long currpos, continuefrom;
 {
     dSP;
 
@@ -352,14 +351,11 @@ unsigned long currpos, continuefrom;
 	unsigned long res = 0;
 
     PUSHMARK(SP);
-    EXTEND(SP, 4);
+    EXTEND(SP, 1);
     PUSHs(sv_2mortal(newSVpvn(what, sizewhat)));
-	PUSHs(sv_2mortal(newSViv(flags)));
-	PUSHs(sv_2mortal(newSVuv(currpos)));
-	PUSHs(sv_2mortal(newSVuv(continuefrom)));
     PUTBACK;
 
-    res = call_pv("parse_filescope_var", G_SCALAR);
+    res = call_pv("getidentid", G_SCALAR);
 
     SPAGAIN;
 

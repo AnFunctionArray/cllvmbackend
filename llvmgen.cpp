@@ -106,6 +106,7 @@ auto splicethings = [] (auto &reflist, auto &refsrc) {
 	reflist.splice(reflist.end(), refsrc, refsrc.begin(), refsrc.end());
 };
 
+THREAD_LOCAL static std::unordered_map<std::string, unsigned> id2dmap;
 
 DLL_EXPORT void endconstantexpr(), beginconstantexpr();
 
@@ -163,6 +164,10 @@ enum class currdecltypeenum {
 };
 
 //std::string currdeclspectypedef;
+
+DLL_EXPORT
+int
+getidentid(const char *what, size_t sizewhat);
 
 THREAD_LOCAL std::list<std::pair<std::list<std::string>, bool>> qualifsandtypes{ 1 };
 
@@ -2272,12 +2277,12 @@ DLL_EXPORT void obtainvalbyidentifier(std::unordered_map<unsigned, std::string>&
 
 static val* plastnotfound;
 
-extern "C" int
-parse_filescope_var(const char *what, size_t sizewhat, int flags, unsigned long currpos, unsigned long continuefrom);
+/*extern "C" int
+parse_filescope_var(const char *what, size_t sizewhat, int flags, unsigned long currpos, unsigned long continuefrom);*/
 
 extern "C" unsigned int evalperlexpruv(const char *what);
 
-unsigned long parse_file_scope_ident(std::string ident, unsigned long lastpos, unsigned long currpos) {
+/*unsigned long parse_file_scope_ident(std::string ident, unsigned long lastpos, unsigned long currpos) {
 
 
 		currpos = parse_filescope_var(ident.c_str(), ident.size(), 0, lastpos, currpos);
@@ -2294,13 +2299,13 @@ unsigned long parse_file_scope_ident(std::string ident, unsigned long lastpos, u
 		}
 
 		return currpos;
-}
+}*/
 
 static unsigned currtop;
 
 static std::mutex maskchn;
 
-static std::condition_variable condvar;
+static std::condition_variable maskchncondvar;
 
 static std::mutex maskupd;
 
@@ -2314,9 +2319,11 @@ const std::list<::var>::reverse_iterator obtainvalbyidentifier(std::string ident
 
 	std::list<::var>::reverse_iterator var{};
 
-	unsigned sofar = evalperlexpruv("scalar($nfilescopesrequested)") - 1;
+	unsigned sofar = evalperlexpruv("scalar($nfilescopesrequested)");
 
 	THREAD_LOCAL static std::list<::var> tmps;
+
+	auto id = getidentid(ident.c_str(), ident.length());
 
 tryagain:
 	if (push && scopevar.size() > 1) {
@@ -2346,25 +2353,27 @@ tryagain:
 			goto found;
 		}
 	}
-	printf("waiting for %d\n", sofar);
 	
-	do {
-		//std::unique_lock lck{all};
-		if (scopevars_global.contains(stringhash(ident.c_str())) && (bfindtypedef == (scopevars_global[stringhash(ident.c_str())].linkage == "typedef"))) {
-			tmps.push_back(scopevars_global[stringhash(ident.c_str())]);
-			var = tmps.rbegin();
-			goto found;
+	if (id <= sofar) {
+		do {
+			printf("looking for %d - %d - %d\n", id, sofar, evalperlexpruv("pos()"));
+			//std::unique_lock lck{all};
+			if (scopevars_global.contains(stringhash(ident.c_str())) && (bfindtypedef == (scopevars_global[stringhash(ident.c_str())].linkage == "typedef"))) {
+				tmps.push_back(scopevars_global[stringhash(ident.c_str())]);
+				var = tmps.rbegin();
+				goto found;
+			}
+
+			{
+				std::unique_lock lck{maskchn};
+
+				printf("waiting for %d - %d\n", id, sofar);
+
+				maskchncondvar.wait(lck);
+			}
 		}
-
-		{
-			std::unique_lock lck{maskupd};
-
-			if (!(currtop < sofar)) break;
-
-			maskupdconvar.wait(lck);
-		}
+		while (1);
 	}
-	while (1);
 	{
 	undef: 
 	if (push) {
@@ -3340,27 +3349,31 @@ tryagain:
 			if (iter != tmps.rend())
 				return var = &*iter, true;
 
-			unsigned sofar = evalperlexpruv("scalar($nfilescopesrequested)") - 1;
+			unsigned sofar = evalperlexpruv("scalar($nfilescopesrequested)");
 
-			printf("waiting for %d\n", sofar);
+			std::string fullident = basic.basic[0] + " " + ident;
+
+			auto id = getidentid(fullident.c_str(), fullident.length());
 			
-			do {
-				//std::unique_lock lck{all};
-				if (structorunionmembers_global.contains(stringhash(ident.c_str()))) {
-					tmps.push_back(structorunionmembers_global[stringhash(ident.c_str())]);
-					var = &tmps.back();
-					return true;
+			if (id <= sofar) {
+				do {
+					//std::unique_lock lck{all};
+					if (structorunionmembers_global.contains(stringhash(fullident.c_str()))) {
+						tmps.push_back(structorunionmembers_global[stringhash(fullident.c_str())]);
+						var = &tmps.back();
+						return true;
+					}
+
+					{
+						std::unique_lock lck{maskchn};
+
+						printf("waiting for %d - %d\n", id, sofar);
+
+						maskchncondvar.wait(lck);
+					}
 				}
-
-				{
-					std::unique_lock lck{maskupd};
-
-					if (!(currtop < sofar)) break;
-
-					maskupdconvar.wait(lck);
-				}
+				while (1);
 			}
-			while (true);
 
 			return false;
 		});
@@ -4176,24 +4189,6 @@ void llvminit_thread();
 
 DLL_EXPORT void llvminit() {
 	//llvminit_thread();
-	std::thread{[]{
-		while(1) {
-			std::unique_lock lck{maskchn};
-
-			{
-
-				std::unique_lock lck2{maskupd};
-
-				condvar.wait(lck);
-
-				while(scopevars_state.test(currtop)) ++currtop;
-			}
-
-			printf("new top %u\n", currtop);
-
-			maskupdconvar.notify_all();
-		}
-	}}.detach();
 }
 
 void llvminit_thread() {
@@ -4231,7 +4226,7 @@ DLL_EXPORT void broadcast(unsigned thrid, unsigned pos) {
 	for(auto first = hasboolintied ? ++structorunionmemberstopushlast : structorunionmembers.front().begin();  first != structorunionmembers.front().end(); ++first) {
 		if(!first->front().identifier.empty()) {
 			std::unique_lock lck{boradcastingstrc};
-			structorunionmembers_global[stringhash(first->front().identifier.c_str())] = *first;
+			structorunionmembers_global[stringhash((first->front().type.front().spec.basicdeclspec.basic[0] + " " + first->front().identifier).c_str())] = *first;
 		}
 	}
 
@@ -4242,10 +4237,10 @@ DLL_EXPORT void broadcast(unsigned thrid, unsigned pos) {
 	structorunionmemberstopushlast = --structorunionmembers.front().end();
 	
 	if (thrid, true) {
-		printf("setting pos %d\n", pos);
-		std::unique_lock lck{maskchn};
-		scopevars_state.set(pos);
-		condvar.notify_one();
+		//printf("setting pos %d\n", pos);
+		//std::unique_lock lck{maskchn};
+		//scopevars_state.set(pos);
+		maskchncondvar.notify_all();
 	}
 }
 
@@ -5464,6 +5459,23 @@ extern "C" void* wait_for_call(void*) {
 static std::list<std::pair<std::unordered_map<unsigned, std::string>, std::string>> recordstack;
 
 DLL_EXPORT __thread U32 matchpos;
+
+
+DLL_EXPORT void updateavailidents(HV * hash) {
+
+	char* key;
+	I32 key_length;
+	U32 nid;
+	SV* value;
+	hv_iterinit(hash);
+	const char nill[1] = { '\0' };
+	while (value = hv_iternextsv(hash, &key, &key_length)) {
+		nid = SvUV(value);
+		std::string keyval = std::string{key, (size_t)key_length}.c_str();
+		if (!id2dmap.contains(keyval))
+			id2dmap.insert({ keyval, nid });
+		}
+}
 
 DLL_EXPORT U32 do_callout(SV * in, HV * hash, U32 pos)
 {

@@ -66,6 +66,13 @@ OUTPUT:
 
 
 void
+updateavailidents1(HV *hash)
+CODE:
+    {
+        updateavailidents(hash);
+    }
+
+void
 initthread1(U32 baseposarg)
 CODE:
     {

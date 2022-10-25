@@ -246,6 +246,38 @@ XS_EUPXS(XS__callout)
 }
 
 
+XS_EUPXS(XS__updateavailidents1); /* prototype to pass -Wmissing-prototypes */
+XS_EUPXS(XS__updateavailidents1)
+{
+    dVAR; dXSARGS;
+    if (items != 1)
+       croak_xs_usage(cv,  "hash");
+    {
+	HV *	hash;
+
+	STMT_START {
+		SV* const xsub_tmp_sv = ST(0);
+		SvGETMAGIC(xsub_tmp_sv);
+		if (SvROK(xsub_tmp_sv) && SvTYPE(SvRV(xsub_tmp_sv)) == SVt_PVHV){
+		    hash = (HV*)SvRV(xsub_tmp_sv);
+		}
+		else{
+		    Perl_croak_nocontext("%s: %s is not a HASH reference",
+				"updateavailidents1",
+				"hash");
+		}
+	} STMT_END
+;
+#line 71 "/Users/sasho/cllvmbackendlocal/perltoc.xs"
+    {
+        updateavailidents(hash);
+    }
+#line 276 "/Users/sasho/cllvmbackendlocal/perltoc.c"
+    }
+    XSRETURN_EMPTY;
+}
+
+
 XS_EUPXS(XS__initthread1); /* prototype to pass -Wmissing-prototypes */
 XS_EUPXS(XS__initthread1)
 {
@@ -255,14 +287,14 @@ XS_EUPXS(XS__initthread1)
     {
 	U32	baseposarg = (unsigned long)SvUV(ST(0))
 ;
-#line 71 "/Users/sasho/cllvmbackendlocal/perltoc.xs"
+#line 78 "/Users/sasho/cllvmbackendlocal/perltoc.xs"
     {
         extern __thread U32 matchpos, basepos;
         //printf("print digit %d\n", baseposarg);
 	    basepos = baseposarg;
 	    initthread();
     }
-#line 266 "/Users/sasho/cllvmbackendlocal/perltoc.c"
+#line 298 "/Users/sasho/cllvmbackendlocal/perltoc.c"
     }
     XSRETURN_EMPTY;
 }
@@ -277,14 +309,14 @@ XS_EUPXS(XS__consumefilescopes1)
     {
 	U32	id = (unsigned long)SvUV(ST(0))
 ;
-#line 81 "/Users/sasho/cllvmbackendlocal/perltoc.xs"
+#line 88 "/Users/sasho/cllvmbackendlocal/perltoc.xs"
     {
         //extern __thread U32 matchpos, basepos;
         //printf("print digit %d\n", baseposarg);
 	    //basepos = baseposarg;
 	    consumefilescopes(id);
     }
-#line 288 "/Users/sasho/cllvmbackendlocal/perltoc.c"
+#line 320 "/Users/sasho/cllvmbackendlocal/perltoc.c"
     }
     XSRETURN_EMPTY;
 }
@@ -299,14 +331,14 @@ XS_EUPXS(XS__registerthread1)
     {
 	U32	id = (unsigned long)SvUV(ST(0))
 ;
-#line 91 "/Users/sasho/cllvmbackendlocal/perltoc.xs"
+#line 98 "/Users/sasho/cllvmbackendlocal/perltoc.xs"
     {
         //extern __thread U32 matchpos, basepos;
         //printf("print digit %d\n", baseposarg);
 	    //basepos = baseposarg;
 	    //registerthread(id);
     }
-#line 310 "/Users/sasho/cllvmbackendlocal/perltoc.c"
+#line 342 "/Users/sasho/cllvmbackendlocal/perltoc.c"
     }
     XSRETURN_EMPTY;
 }
@@ -323,14 +355,14 @@ XS_EUPXS(XS__broadcast1)
 ;
 	U32	currid = (unsigned long)SvUV(ST(1))
 ;
-#line 101 "/Users/sasho/cllvmbackendlocal/perltoc.xs"
+#line 108 "/Users/sasho/cllvmbackendlocal/perltoc.xs"
     {
         //extern __thread U32 matchpos, basepos;
         //printf("print digit %d\n", baseposarg);
 	    //basepos = baseposarg;
 	    broadcast(thrid, currid);
     }
-#line 334 "/Users/sasho/cllvmbackendlocal/perltoc.c"
+#line 366 "/Users/sasho/cllvmbackendlocal/perltoc.c"
     }
     XSRETURN_EMPTY;
 }
@@ -347,14 +379,14 @@ XS_EUPXS(XS__flushfilescopes1)
 ;
 	U32	id = (unsigned long)SvUV(ST(1))
 ;
-#line 111 "/Users/sasho/cllvmbackendlocal/perltoc.xs"
+#line 118 "/Users/sasho/cllvmbackendlocal/perltoc.xs"
     {
         //extern __thread U32 matchpos, basepos;
         //printf("print digit %d\n", baseposarg);
 	    //basepos = baseposarg;
 	    flushfilescopes(maxthreads, id);
     }
-#line 358 "/Users/sasho/cllvmbackendlocal/perltoc.c"
+#line 390 "/Users/sasho/cllvmbackendlocal/perltoc.c"
     }
     XSRETURN_EMPTY;
 }
@@ -367,21 +399,21 @@ XS_EUPXS(XS__startmodule)
     if (items != 1)
        croak_xs_usage(cv,  "in");
     {
-#line 130 "/Users/sasho/cllvmbackendlocal/perltoc.xs"
+#line 137 "/Users/sasho/cllvmbackendlocal/perltoc.xs"
     STRLEN len;
     char* s;
-#line 374 "/Users/sasho/cllvmbackendlocal/perltoc.c"
+#line 406 "/Users/sasho/cllvmbackendlocal/perltoc.c"
 	extern	RETVAL;
 	SV *	in = ST(0)
 ;
-#line 133 "/Users/sasho/cllvmbackendlocal/perltoc.xs"
+#line 140 "/Users/sasho/cllvmbackendlocal/perltoc.xs"
     {
         void startmodule(const char* modulename, size_t szmodulename);
         s = SvPVutf8(in, len);
 
         startmodule(s, len);
     }
-#line 385 "/Users/sasho/cllvmbackendlocal/perltoc.c"
+#line 417 "/Users/sasho/cllvmbackendlocal/perltoc.c"
     }
     XSRETURN(1);
 }
@@ -416,6 +448,7 @@ XS_EXTERNAL(boot_AnFunctionArray)
 
         (void)newXSproto_portable("startmatching", XS__startmatching, file, "$$$$");
         (void)newXSproto_portable("callout", XS__callout, file, "$$$");
+        (void)newXSproto_portable("updateavailidents1", XS__updateavailidents1, file, "$");
         (void)newXSproto_portable("initthread1", XS__initthread1, file, "$");
         (void)newXSproto_portable("consumefilescopes1", XS__consumefilescopes1, file, "$");
         (void)newXSproto_portable("registerthread1", XS__registerthread1, file, "$");
