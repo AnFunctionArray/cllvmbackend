@@ -30,8 +30,8 @@ jobs:
       # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
       env:
-        CC:   g++-12
-        CXX:  g++-12
+        CC:   gcc
+        CXX:  g++
         LLVM_CONFIG: llvm-config-16
 
     - name: Build
