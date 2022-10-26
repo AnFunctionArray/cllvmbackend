@@ -129,7 +129,7 @@ static llvm::IntegerType* (*getInt128Ty)(llvm::LLVMContext& C) = llvm::IntegerTy
 THREAD_LOCAL static std::list<std::list<var>> scopevar{ 1 };
 
 
-static std::unordered_map<unsigned int, var> scopevars_global;
+
 
 static std::bitset<0xFFFF> scopevars_state;
 
@@ -2310,6 +2310,8 @@ static std::condition_variable maskchncondvar;
 static std::mutex maskupd;
 
 static std::condition_variable maskupdconvar;
+
+static std::unordered_map<unsigned int, var> scopevars_global;
 
 const std::list<::var>::reverse_iterator obtainvalbyidentifier(std::string ident, bool push, bool bfindtypedef,
 	std::pair<std::list<std::list<::var>>::reverse_iterator, std::list<::var>::reverse_iterator> rfromwhere) {
