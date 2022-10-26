@@ -23,30 +23,32 @@ jobs:
         submodules: 'true'
     
     - name: Install dependencies
-      run: wget https://apt.llvm.org/llvm.sh && sudo bash ./llvm.sh 15 && sudo apt install librange-v3-dev libperl-dev
+      run: wget https://apt.llvm.org/llvm.sh && sudo bash ./llvm.sh 16 && sudo apt install librange-v3-dev libperl-dev
 
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
       # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
       env:
-        CC:   clang-15
-        CXX:  clang++-15
-        LLVM_CONFIG: llvm-config-15
+        CC:   clang-16
+        CXX:  clang++-16
+        LLVM_CONFIG: llvm-config-16
 
     - name: Build
       # Build your program with the given configuration
       run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
 
     - name: Test
-      working-directory: ${{github.workspace}}
+      working-directory: ${{github.workspace}}/lexer
       # Execute tests defined by the CMake configuration.  
       # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
-      run: ${{github.workspace}}/build/regularc ./regexes/parse.pl ./regularcbulk/tests/test.c
+      run: ${{github.workspace}}/build/regularc ./parse.pl ./bulk/tests/test.c
       env:
-        MAXTHREADS: -1
+        MAXTHREADS: 8
+        MINLEN: 50000
+        SILENT: 1
 
     - name: TestExecute
       working-directory: ${{github.workspace}}
-      run: clang-15 ./*.bc && ! ./a.out
+      run: clang-16 ./*.bc && ! ./a.out
       

@@ -320,7 +320,7 @@ void handler1(int sig) {
 	printf("signal %d @ %lu\n", sig, evalperlexpruv("pos()"));
 	//dumpabrupt();
 	//exit(0);
-	raise(sig);
+	//raise(sig);
 	/*if (!initial)
 		call_argv("decnthreads", G_DISCARD | G_NOARGS, NULL);
 	else {
