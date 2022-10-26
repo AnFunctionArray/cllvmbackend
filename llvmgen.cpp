@@ -116,7 +116,7 @@ DLL_EXPORT void constructstring();
 
 llvm::BranchInst* splitbb(const char* identifier, size_t szident);
 
-void fixupstructype(std::list<struct var>* var);
+struct var;
 const llvm::fltSemantics& getfltsemfromtype(struct type flttype);
 
 static llvm::IntegerType* (*getInt16Ty)(llvm::LLVMContext& C) = llvm::IntegerType::getInt16Ty;
