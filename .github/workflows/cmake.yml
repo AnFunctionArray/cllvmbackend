@@ -20,7 +20,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
       with:
-        submodules: 'true'
+        submodules: recursive
     
     - name: Install dependencies
       run: sudo apt install g++-12 && wget https://apt.llvm.org/llvm.sh && sudo bash ./llvm.sh 16 && sudo apt install librange-v3-dev libperl-dev
@@ -50,5 +50,5 @@ jobs:
 
     - name: TestExecute
       working-directory: ${{github.workspace}}
-      run: clang-16 ./lexer/*.bc && ! ./a.out
+      run: clang-16 ./build/*.bc && ! ./a.out
       
