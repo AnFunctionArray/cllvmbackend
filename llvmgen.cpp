@@ -110,6 +110,9 @@ THREAD_LOCAL static std::unordered_map<std::string, unsigned> id2dmap;
 
 DLL_EXPORT void endconstantexpr(), beginconstantexpr();
 
+	static std::mutex boradcastingstrc;
+	static std::mutex boradcastingscope;
+
 DLL_EXPORT void insertinttoimm(const char* str, size_t szstr, const char* suffix, size_t szstr1, int type);
 
 DLL_EXPORT void constructstring();
@@ -167,13 +170,17 @@ enum class currdecltypeenum {
 
 DLL_EXPORT
 int
-getidentid(const char *what, size_t sizewhat);
+callstring(const char *fn, const char *what, size_t sizewhat);
+
+DLL_EXPORT
+int
+callint(const char *fn, int n, const char *what, size_t sizewhat);
 
 THREAD_LOCAL std::list<std::pair<std::list<std::string>, bool>> qualifsandtypes{ 1 };
 
 THREAD_LOCAL static std::list<std::list<std::list<var>>> structorunionmembers{ 1 };
 
-static std::unordered_map<unsigned int, std::list<var>> structorunionmembers_global;
+static std::unordered_map<unsigned int, std::unordered_map<unsigned int, std::list<var>>> structorunionmembers_global;
 
 static std::list<std::list<std::list<var>>> *_structorunionmembers;
 
@@ -416,6 +423,8 @@ DLL_EXPORT unsigned constexpr stringhash(char const* input) {
 		33 * stringhash(input + 1)
 		: 5381;
 }
+
+DLL_EXPORT void broadcast(unsigned thrid, unsigned pos);
 
 void printtype(llvm::Type* ptype, std::string identifier) {
 	std::string type_str;
@@ -2311,7 +2320,7 @@ static std::mutex maskupd;
 
 static std::condition_variable maskupdconvar;
 
-static std::unordered_map<unsigned int, var> scopevars_global;
+static std::unordered_map<unsigned int, std::unordered_map<unsigned int, var>> scopevars_global;
 
 const std::list<::var>::reverse_iterator obtainvalbyidentifier(std::string ident, bool push, bool bfindtypedef,
 	std::pair<std::list<std::list<::var>>::reverse_iterator, std::list<::var>::reverse_iterator> rfromwhere) {
@@ -2321,11 +2330,11 @@ const std::list<::var>::reverse_iterator obtainvalbyidentifier(std::string ident
 
 	std::list<::var>::reverse_iterator var{};
 
-	unsigned sofar = evalperlexpruv("scalar($nfilescopesrequested)");
+	//unsigned sofar = evalperlexpruv("scalar($nfilescopesrequested)");
 
 	THREAD_LOCAL static std::list<::var> tmps;
 
-	auto id = getidentid(ident.c_str(), ident.length());
+	int id;
 
 tryagain:
 	if (push && scopevar.size() > 1) {
@@ -2355,24 +2364,21 @@ tryagain:
 			goto found;
 		}
 	}
+
+	id = callstring("waitforid", ident.c_str(), ident.length());
 	
-	if (id <= sofar) {
+	if (id != -1) {
 		do {
-			printf("looking for %d - %d - %d\n", id, sofar, evalperlexpruv("pos()"));
+			printf("looking for %d - %d\n", id, evalperlexpruv("pos()"));
+			//registerndwait(id);
 			//std::unique_lock lck{all};
-			if (scopevars_global.contains(stringhash(ident.c_str())) && (bfindtypedef == (scopevars_global[stringhash(ident.c_str())].linkage == "typedef"))) {
-				tmps.push_back(scopevars_global[stringhash(ident.c_str())]);
+			if (scopevars_global.contains(id) && (bfindtypedef == (scopevars_global[id][stringhash(ident.c_str())].linkage == "typedef"))) {
+				tmps.push_back(scopevars_global[id][stringhash(ident.c_str())]);
 				var = tmps.rbegin();
 				goto found;
 			}
 
-			{
-				std::unique_lock lck{maskchn};
-
-				printf("waiting for %d - %d\n", id, sofar);
-
-				maskchncondvar.wait(lck);
-			}
+			throw std::logic_error {"unreachable " + ident};
 		}
 		while (1);
 	}
@@ -2773,6 +2779,17 @@ DLL_EXPORT void endbuildingstructorunion() {
 	laststruc = currtypevectorbeingbuild.back().p;
 
 	currtypevectorbeingbuild.pop_back();
+
+	if (pcurrblock.empty())  {
+		auto fullident = laststruc->front().type.front().spec.basicdeclspec.basic[0] +  " " + laststruc->front().identifier;
+		auto idtostore = callstring("getidtostor", fullident.c_str(), fullident.length());
+		assert(idtostore != -1);
+		{
+			//std::unique_lock lck{boradcastingstrc};
+			structorunionmembers_global[idtostore][stringhash(fullident.c_str())] = *laststruc;
+		}
+		callint("broadcastid", idtostore, fullident.c_str(), fullident.size());
+	}
 
 	//assert(structvar.type.back().spec.basicdeclspec.basic[0] == "struct");
 
@@ -3351,28 +3368,24 @@ tryagain:
 			if (iter != tmps.rend())
 				return var = &*iter, true;
 
-			unsigned sofar = evalperlexpruv("scalar($nfilescopesrequested)");
+			//unsigned sofar = evalperlexpruv("scalar($nfilescopesrequested)");
 
 			std::string fullident = basic.basic[0] + " " + ident;
 
-			auto id = getidentid(fullident.c_str(), fullident.length());
+			auto id = callstring("waitforid", fullident.c_str(), fullident.length());
 			
-			if (id <= sofar) {
+			if (id != -1) {
 				do {
-					//std::unique_lock lck{all};
-					if (structorunionmembers_global.contains(stringhash(fullident.c_str()))) {
-						tmps.push_back(structorunionmembers_global[stringhash(fullident.c_str())]);
+					printf("looking for %d - %d\n", id, evalperlexpruv("pos()"));
+					//registerndwait(id);
+
+					if (structorunionmembers_global.contains(id)) {
+						tmps.push_back(structorunionmembers_global[id][stringhash(fullident.c_str())]);
 						var = &tmps.back();
 						return true;
 					}
 
-					{
-						std::unique_lock lck{maskchn};
-
-						printf("waiting for %d - %d\n", id, sofar);
-
-						maskchncondvar.wait(lck);
-					}
+					throw std::logic_error {"unreachable " + fullident};
 				}
 				while (1);
 			}
@@ -4016,7 +4029,7 @@ DLL_EXPORT void endqualifs(std::unordered_map<unsigned, std::string>&& hashes) {
 	if (!nontypedeflinkage.empty()) lastvar.linkage = nontypedeflinkage;
 
 	if (std::all_of(refbasic.begin(), refbasic.end(), [](const std::string& elem) {return elem.empty(); }))
-		if (lastvar.firstintroduced == nullptr, true) refbasic[1] = "int";
+		if (lastvar.firstintroduced == nullptr) refbasic[1] = "int";
 		else throw std::runtime_error{ "decl with no basic info" };
 
 	if (ranges::contains(std::array{ "struct", "union", "enum" }, refbasic[0]))
@@ -4047,6 +4060,16 @@ DLL_EXPORT void endqualifs(std::unordered_map<unsigned, std::string>&& hashes) {
 	/*if (lastvar.type.front().uniontype == type::FUNCTION) {
 		lastvar.requestValue();
 	}*/
+	if (lastvar.firstintroduced == nullptr && currtypevectorbeingbuild.back().currdecltype != currdecltypeenum::STRUCTORUNION 
+		&& currtypevectorbeingbuild.back().currdecltype != currdecltypeenum::PARAMS)  {
+		auto idtostore = callstring("getidtostor", lastvar.identifier.c_str(), lastvar.identifier.length());
+		assert(idtostore != -1);
+		{
+			//std::unique_lock lck{boradcastingscope};
+			scopevars_global[idtostore][stringhash(lastvar.identifier.c_str())] = lastvar;
+		}
+		callint("broadcastid", idtostore, lastvar.identifier.c_str(), lastvar.identifier.size());
+	}
 }
 
 DLL_EXPORT void startfunctionparamdecl() {
@@ -4213,7 +4236,7 @@ DLL_EXPORT void broadcast(unsigned thrid, unsigned pos) {
 	for(auto first = hasboolintiedscope ? ++consumablescopevarstopushlast : scopevar.front().begin();  first != scopevar.front().end(); ++first) {
 		if(!first->identifier.empty()) {
 			std::unique_lock lck{boradcastingscope};
-			scopevars_global[stringhash(first->identifier.c_str())] = *first;
+			scopevars_global[pos][stringhash(first->identifier.c_str())] = *first;
 		}
 	}
 
@@ -4228,7 +4251,7 @@ DLL_EXPORT void broadcast(unsigned thrid, unsigned pos) {
 	for(auto first = hasboolintied ? ++structorunionmemberstopushlast : structorunionmembers.front().begin();  first != structorunionmembers.front().end(); ++first) {
 		if(!first->front().identifier.empty()) {
 			std::unique_lock lck{boradcastingstrc};
-			structorunionmembers_global[stringhash((first->front().type.front().spec.basicdeclspec.basic[0] + " " + first->front().identifier).c_str())] = *first;
+			structorunionmembers_global[pos][stringhash((first->front().type.front().spec.basicdeclspec.basic[0] + " " + first->front().identifier).c_str())] = *first;
 		}
 	}
 
@@ -4238,12 +4261,12 @@ DLL_EXPORT void broadcast(unsigned thrid, unsigned pos) {
 
 	structorunionmemberstopushlast = --structorunionmembers.front().end();
 	
-	if (thrid, true) {
+	/*if (thrid, true) {
 		//printf("setting pos %d\n", pos);
 		//std::unique_lock lck{maskchn};
 		//scopevars_state.set(pos);
-		maskchncondvar.notify_all();
-	}
+		//maskchncondvar.notify_all();
+	}*/
 }
 
 DLL_EXPORT void flushfilescopes(unsigned n, unsigned id) {

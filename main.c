@@ -339,7 +339,8 @@ void handler1(int sig) {
 }
 
 int
-getidentid(what, sizewhat)
+callstring(caller, what, sizewhat)
+const char *caller;
 const char *what;
 size_t sizewhat;
 {
@@ -348,18 +349,51 @@ size_t sizewhat;
     ENTER;
     SAVETMPS;
 
-	unsigned long res = 0;
+	int res = 0;
 
     PUSHMARK(SP);
     EXTEND(SP, 1);
     PUSHs(sv_2mortal(newSVpvn(what, sizewhat)));
     PUTBACK;
 
-    res = call_pv("getidentid", G_SCALAR);
+    res = call_pv(caller, G_SCALAR);
 
     SPAGAIN;
 
-	res = POPu;
+	res = POPi;
+
+    PUTBACK;
+    FREETMPS;
+    LEAVE;
+
+	return res;
+}
+
+int
+callint(caller, var, what, szwhat)
+const char *caller;
+const char *what;
+size_t szwhat;
+int var;
+{
+    dSP;
+
+    ENTER;
+    SAVETMPS;
+
+	int res = 0;
+
+    PUSHMARK(SP);
+    EXTEND(SP, 2);
+	PUSHs(sv_2mortal(newSVpvn(what, szwhat)));
+    PUSHs(sv_2mortal(newSViv(var)));
+    PUTBACK;
+
+    res = call_pv(caller, G_SCALAR);
+
+    SPAGAIN;
+
+	res = POPi;
 
     PUTBACK;
     FREETMPS;
