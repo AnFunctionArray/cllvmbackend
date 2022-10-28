@@ -741,6 +741,10 @@ struct type {
 		functype func;
 	} spec;
 
+	void strip() {
+		cachedtype = nullptr;
+	}
+
 	llvm::Type* cachedtype{};
 };
 
@@ -778,6 +782,14 @@ const ::type nbitint = []() {
 }();
 
 const ::type basicsz = []() {
+	::type tmp{ type::BASIC };
+	tmp.spec.basicdeclspec.basic[0] = "unsigned";
+	tmp.spec.basicdeclspec.basic[1] = "int";
+	tmp.spec.basicdeclspec.longspecsn = 0;
+	return tmp;
+}();
+
+const ::type basiclong = []() {
 	::type tmp{ type::BASIC };
 	tmp.spec.basicdeclspec.basic[0] = "unsigned";
 	tmp.spec.basicdeclspec.basic[1] = "long";
@@ -820,6 +832,16 @@ typedef llvm::Value* lvaluebase;
 
 struct val : valbase {
 	lvaluebase lvalue{};
+
+	void strip() {
+		for(auto &elem : type) {
+			elem.strip();
+		}
+
+		value = nullptr;
+		constant = nullptr;
+		lvalue = nullptr;
+	}
 };
 
 
@@ -830,6 +852,17 @@ static THREAD_LOCAL std::list<llvm::BasicBlock*> pcurrblock;
 struct var : valbase {
 
 	llvm::Type* pllvmtype{};
+
+	void strip() {
+		for(auto &elem : type) {
+			elem.strip();
+		}
+
+		value = nullptr;
+		constant = nullptr;
+		assert(!firstintroduced);
+		pllvmtype = nullptr;
+	}
 
 	auto requestType() {
 		return pllvmtype ? pllvmtype : 
@@ -1240,12 +1273,6 @@ struct basehndl /* : bindings_compiling*/ {
 	}
 
 	val integralpromotions(val in) {
-		if (!bIsBasicFloat(in.type.front()) && !bIsBasicInteger(in.type.front())) {
-			if (in.type.front().uniontype != type::POINTER)
-				in = convertTo(in, { nbitint }, false);
-			else
-				in = convertTo(in, { basicsz });
-		}
 
 		assert(in.type.size() == 1);
 
@@ -1302,8 +1329,16 @@ struct basehndl /* : bindings_compiling*/ {
 
 		for (auto i = 0; i < 2; ++i)
 			if (!bIsBasicFloat(ops_in[i].type.front()) && !bIsBasicInteger(ops_in[i].type.front())) {
-				if(ops_in[i].type.front().uniontype != type::POINTER)
-					ops_in[i] = convertTo(ops_in[i], { nbitint }, false);
+				if(ops_in[i].type.front().uniontype != type::POINTER && ops_in[i].type.front().uniontype != type::FUNCTION) {
+					if (!bIsBasicFloat(ops_in[!i].type.front())) {
+						std::list type = { nbitint };
+						type.front().spec.basicdeclspec.longspecsn = std::max(pdatalayout->getTypeSizeInBits(ops_in[i].requestType()), pdatalayout->getTypeSizeInBits(ops_in[!i].requestType()));
+						ops_in[i] = convertTo(ops_in[i], type, false);
+					}
+					else {
+						ops_in[i] = convertTo(ops_in[i], ops_in[!i].type, false);
+					}
+				}
 				else
 					ops_in[i] = convertTo(ops_in[i], { basicsz });
 			}
@@ -1325,9 +1360,14 @@ struct basehndl /* : bindings_compiling*/ {
 				listtp.back().spec.basicdeclspec.longspecsn = 1,
 				ops[i]->type.size() > 1)
 				ops_in[i] = convertTo(*ops[!i], listtp);
-			else if (ranges::contains(std::array{ "double", "float" }, refspecops[i]->basic[1]))
+			else if (ranges::contains(std::array{ "double", "float" }, refspecops[i]->basic[1])) {
+				if(refspecops[!i]->basic[1] == "double") {
+					ops_in[i] = convertTo(*ops[i], ops[!i]->type);
+					return ops_in;
+				}
 				for (ops_in[!i] = convertTo(*ops[!i], ops[i]->type);;)
 					return ops_in;
+			}
 
 		ops_in[0] = integralpromotions(*ops[0]);
 
@@ -1975,16 +2015,29 @@ const llvm::fltSemantics& getfloatsembytype(val val) {
 
 struct handlefpexpr : basehndl {
 
+	virtual llvm::Constant* getValZero(val val) override {
+
+		return llvm::ConstantFP::getZero(val.value->getType(), false);
+	}
+
 	virtual std::list<struct type> getdefaulttype() override {
 		auto basic = basicint;
 		basic.spec.basicdeclspec.basic[2] = "float";
 		return { basic };
 	}
 
-	virtual basehndl* (*getrestorefn())(basehndl*) {
+	virtual basehndl* (*getrestorefn())(basehndl*) override {
 		return [](basehndl* pnhdl) -> basehndl* {
 			return new (pnhdl) handlefpexpr{};
 		};
+	}
+
+	virtual void shifttwovalues(bool bright) override {
+		auto &firstop = *(----immidiates.end());
+		
+		firstop = convertTo(firstop, {firstop.type.front().spec.basicdeclspec.basic[1] == "double" ? basiclong : basicsz});
+
+		basehndl::shifttwovalues(bright);
 	}
 
 	virtual void getnegative() override {
@@ -2372,6 +2425,7 @@ tryagain:
 			printf("looking for %d - %d\n", id, evalperlexpruv("pos()"));
 			//registerndwait(id);
 			//std::unique_lock lck{all};
+			std::unique_lock lck{boradcastingscope};
 			if (scopevars_global.contains(id) && (bfindtypedef == (scopevars_global[id][stringhash(ident.c_str())].linkage == "typedef"))) {
 				tmps.push_back(scopevars_global[id][stringhash(ident.c_str())]);
 				var = tmps.rbegin();
@@ -2784,9 +2838,13 @@ DLL_EXPORT void endbuildingstructorunion() {
 		auto fullident = laststruc->front().type.front().spec.basicdeclspec.basic[0] +  " " + laststruc->front().identifier;
 		auto idtostore = callstring("getidtostor", fullident.c_str(), fullident.length());
 		assert(idtostore != -1);
+		auto elemtopush = *laststruc;
+		for (auto &elem : elemtopush) {
+			elem.strip();
+		}
 		{
-			//std::unique_lock lck{boradcastingstrc};
-			structorunionmembers_global[idtostore][stringhash(fullident.c_str())] = *laststruc;
+			std::unique_lock lck{boradcastingstrc};
+			structorunionmembers_global[idtostore][stringhash(fullident.c_str())] = std::move(elemtopush);
 		}
 		callint("broadcastid", idtostore, fullident.c_str(), fullident.size());
 	}
@@ -2924,8 +2982,8 @@ val coerceto(val target, std::list<::type> to) {
 		rvalue = llvmbuilder->CreateLoad(buildllvmtypefull(arrtyls), tmprval.value);
 	}
 
-	if(tmp.requestType()->isIntegerTy())
-		llvmbuilder->CreateStore(llvm::ConstantAggregateZero::get(tmp.requestType()), tmp.value);
+	/*if(tmp.requestType()->isIntegerTy())
+		llvmbuilder->CreateStore(phndl->getValZero(val{tmp}), tmp.value);*/
 
 	llvmbuilder->CreateStore(rvalue, tmp.value);
 
@@ -3035,21 +3093,13 @@ extern const std::list<::var>* getstructorunion(bascitypespec& basic);
 void pushsizeoftype(val&& value) {
 	size_t szoftype = 1;
 
-	::type sztype{ ::type::BASIC };
-
-	sztype.spec.basicdeclspec.basic[0] = "unsigned";
-
-	sztype.spec.basicdeclspec.basic[1] = "long";
-
-	sztype.spec.basicdeclspec.longspecsn = 1;
-
 	szoftype = pdatalayout->getTypeStoreSize(value.requestType());
 
 	phndl->immidiates.push_back(
-		val{ std::list{sztype},
+		val{ std::list{basicsz},
 		llvm::ConstantInt::getIntegerValue(
 				getInt64Ty((*llvmctx)),
-				llvm::APInt{64, szoftype}),
+				llvm::APInt{32, szoftype}),
 			"[[sizeoftypename]]" });
 }
 
@@ -3378,6 +3428,8 @@ tryagain:
 				do {
 					printf("looking for %d - %d\n", id, evalperlexpruv("pos()"));
 					//registerndwait(id);
+
+					std::unique_lock lck{boradcastingstrc};
 
 					if (structorunionmembers_global.contains(id)) {
 						tmps.push_back(structorunionmembers_global[id][stringhash(fullident.c_str())]);
@@ -4064,9 +4116,11 @@ DLL_EXPORT void endqualifs(std::unordered_map<unsigned, std::string>&& hashes) {
 		&& currtypevectorbeingbuild.back().currdecltype != currdecltypeenum::PARAMS)  {
 		auto idtostore = callstring("getidtostor", lastvar.identifier.c_str(), lastvar.identifier.length());
 		assert(idtostore != -1);
+		auto vartopush = lastvar;
+		vartopush.strip();
 		{
-			//std::unique_lock lck{boradcastingscope};
-			scopevars_global[idtostore][stringhash(lastvar.identifier.c_str())] = lastvar;
+			std::unique_lock lck{boradcastingscope};
+			scopevars_global[idtostore][stringhash(lastvar.identifier.c_str())] = std::move(vartopush);
 		}
 		callint("broadcastid", idtostore, lastvar.identifier.c_str(), lastvar.identifier.size());
 	}
@@ -4455,8 +4509,9 @@ DLL_EXPORT void dumpmodule() {
 					outputll{ mainmodule->getName().str() + ".ll",
 								code };
 				if (!record.is_open()) {
+					//llvm::WriteBitcodeToFile(*mainmodule, output);
+					mainmodule->print(outputll, nullptr);
 					llvm::WriteBitcodeToFile(*mainmodule, output);
-					//mainmodule->print(outputll, nullptr);
 				}
 			//}
 			//areweinuser = 0;
@@ -5332,9 +5387,13 @@ rest:
 	if (!exponent.empty())
 		finalnumber += "E" + exponent_sign + exponent;
 
+	if(hashes["nan"_h].empty()) {
+		auto status = floatlit.convertFromString(finalnumber, llvm::APFloatBase::rmNearestTiesToEven);
+		assert(status);
+	}
+
 	llvm::Constant *pconstant = llvm::ConstantFP::get(pllvmtype, hashes["nan"_h].empty() ? floatlit :  llvm::APFloat::getNaN(floatsem));
 
-	auto status = floatlit.convertFromString(finalnumber, llvm::APFloatBase::rmNearestTiesToEven);
 	immidiates.push_back({ currtype, pconstant });
 }
 #if 0
