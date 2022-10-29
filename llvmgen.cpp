@@ -2,6 +2,7 @@
 //#include "llvm/IR/Instructions.h"
 //#include "llvm/IR/Value.h"
 //#include "llvm/Support/Allocator.h"
+#include "llvm/Support/raw_ostream.h"
 #ifdef _WIN32
 #ifdef NDEBUG
 #undef NDEBUG
@@ -16,6 +17,8 @@ extern "C" void __cdecl _wassert(
 }
 #endif
 #endif
+#include "llvm/IR/AssemblyAnnotationWriter.h"
+#include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/IR/Value.h"
 #include <cctype>
@@ -82,6 +85,7 @@ extern "C" void __cdecl _wassert(
 #include <unordered_map>
 #include <thread>
 #include <condition_variable>
+#include <optional>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -107,6 +111,8 @@ auto splicethings = [] (auto &reflist, auto &refsrc) {
 };
 
 THREAD_LOCAL static std::unordered_map<std::string, unsigned> id2dmap;
+
+static bool pop_obtainvalbyidentifier_last();
 
 DLL_EXPORT void endconstantexpr(), beginconstantexpr();
 
@@ -148,11 +154,7 @@ static std::list<std::list<::var>> dummypar{1};
 
 static std::list<::var> dummypar2{1};
 
-const std::list<struct var>::reverse_iterator obtainvalbyidentifier(std::string ident, bool push = true, bool bfindtypedef = false,
-	std::pair<
-		std::list<std::list<::var>>::reverse_iterator,
-		std::list<::var>::reverse_iterator
-	> rfromwhere = { dummypar.rbegin(), dummypar2.rbegin() });
+const std::optional<std::list<struct var>::reverse_iterator> obtainvalbyidentifier(std::string ident, bool push = true, bool bfindtypedef = false, bool bcontinue = false);
 
 extern const struct type basicint, basicsz;
 
@@ -693,6 +695,7 @@ struct type {
 		std::list<std::list<var>> parametertypes_list{ 1 };
 		bool bisvariadic;
 		std::string callconv;
+		bool hasknownderivatives = false;
 	};
 
 	type(const type& a) : spec{ a.uniontype }, uniontype{ a.uniontype } {
@@ -874,7 +877,7 @@ struct var : valbase {
 		if (basicdeclspecarr[0].empty() && basicdeclspecarr[1].empty() && !basicdeclspecarr[3].empty()) {
 			auto tmpident = identifier;
 			identifier.clear();
-			auto typedefval = obtainvalbyidentifier(basicdeclspecarr[3], false, true);
+			auto typedefval = obtainvalbyidentifier(basicdeclspecarr[3], false, true).value();
 			type.pop_back();
 			type.splice(type.end(), typedefval->fixupTypeIfNeeded());
 			identifier = tmpident;
@@ -890,6 +893,8 @@ struct var : valbase {
 	std::string linkage;
 
 	llvm::BasicBlock* firstintroduced{ pcurrblock.empty() ? nullptr : pcurrblock.back() };
+	
+	bool ispotentiallywrong = false;
 };
 
 THREAD_LOCAL static std::list<var>::iterator currfunc;
@@ -984,25 +989,12 @@ static ::type getequivalentintegertype(llvm::Type* inweirdtype) {
 	assert(0);
 }
 
-static ::type getequivalentfloattype(llvm::Type* inweirdtype) {
-	::type basicty{ type::BASIC };
-	basicty.spec.basicdeclspec.basic[0] = "unsigned";
-	if (pdatalayout->getTypeStoreSize(inweirdtype) == 4)
-		goto floattype;
-	if (pdatalayout->getTypeStoreSize(inweirdtype) == 8)
-		goto doubletype;
-	switch (0) if (0);
-	else if (0) {
-	floattype:
-		basicty.spec.basicdeclspec.basic[1] = "float";
-		return basicty;
-	doubletype:
-		basicty.spec.basicdeclspec.basic[1] = "double";
-		return basicty;
-	}
-	assert(0);
-}
+
 #endif
+
+static ::type getequivalentfloattype(::type inweirdtype) {
+	return inweirdtype.spec.basicdeclspec.basic[1] == "double" ? basiclong : basicsz;
+}
 
 struct basehndl /* : bindings_compiling*/ {
 	//virtual llvm::Value* assigntwovalues() = 0;
@@ -1046,8 +1038,8 @@ struct basehndl /* : bindings_compiling*/ {
 				target.value = llvmbuilder->CreateFPCast(
 					target.value, buildllvmtypefull(to));
 			else if (target.type.front().uniontype == type::POINTER) {
-				target.value = llvmbuilder->CreatePtrToInt(target.value, buildllvmtypefull({ basicsz })),
-					llvmbuilder->CreateUIToFP(
+				target.value = llvmbuilder->CreatePtrToInt(target.value, buildllvmtypefull({ basicsz }));
+				target.value = llvmbuilder->CreateUIToFP(
 						target.value, buildllvmtypefull(to));
 			}
 			else {
@@ -1273,6 +1265,15 @@ struct basehndl /* : bindings_compiling*/ {
 	}
 
 	val integralpromotions(val in) {
+
+		if(in.type.front().uniontype != type::POINTER && in.type.front().uniontype != type::FUNCTION) {
+			std::list type = { nbitint };
+			type.front().spec.basicdeclspec.longspecsn = pdatalayout->getTypeSizeInBits(in.requestType());
+			in = convertTo(in, type, false);
+		}
+		else {
+			in = convertTo(in, { basicsz });
+		}
 
 		assert(in.type.size() == 1);
 
@@ -1553,9 +1554,22 @@ struct basehndl /* : bindings_compiling*/ {
 		return ops;*/
 	}
 
-	auto getops(bool busual = true, bool bassign = false) {
+	auto &requireint(::val &op) {
+		if (!bIsBasicInteger(op.type.front()) ) {
+			extern val coerceto(val target, std::list<::type> to);
+			op = coerceto(op, { nbitint });
+		}
+		return op;
+	}
+
+	auto getops(bool busual = true, bool bassign = false, bool requireint=false) {
 
 		auto ops = std::array{ *(----immidiates.end()), immidiates.back() };
+
+		if(requireint) {
+			ops[0] = this->requireint(ops[0]);
+			ops[1] = this->requireint(ops[1]);
+		}
 
 		//auto op0type = ops[0].value->getType();
 
@@ -1695,7 +1709,7 @@ struct basehndl /* : bindings_compiling*/ {
 	}
 
 	virtual void bitwisetwovalues(llvm::Instruction::BinaryOps op) {
-		std::array ops = getops();
+		std::array ops = getops(true, false, true);
 
 		ops[0].value = llvmbuilder->CreateBinOp(op, ops[0].value, ops[1].value);
 
@@ -1811,6 +1825,44 @@ struct basehndl /* : bindings_compiling*/ {
 		extern ::val decay(::val lvalue);
 
 		llvm::Value* instr;
+
+		::var lastvar;
+
+		if (ops[0].type.front().uniontype == type::FUNCTION) {
+			if (auto itervar = obtainvalbyidentifier(ops[0].identifier, false); !itervar.has_value() || itervar.value()->ispotentiallywrong) {
+				::var newvar{ {.identifier = ops[0].identifier} };
+				newvar.type = newvar.type = { basicint };
+				newvar.firstintroduced = nullptr;
+				newvar.ispotentiallywrong = true;
+
+				if(itervar.has_value()) {
+					lastvar = std::move(**itervar);
+
+					assert(pop_obtainvalbyidentifier_last());
+				}
+
+				scopevar.front().push_back(newvar);
+
+				addvar(scopevar.front().back());
+
+				obtainvalbyidentifier(newvar.identifier);
+
+				ops[0] = immidiates.back();
+				
+				immidiates.pop_back();
+
+				if(lastvar.value) {
+					std::cout << "not found: " << ops[0].identifier << " patching up as object" << std::endl;
+
+					lastvar.value->replaceAllUsesWith(obtainvalbyidentifier(newvar.identifier, false).value()->value);
+				}
+			}
+			else {
+				printf("Warning - no op: %s\n", ops[0].identifier.c_str());
+				immidiates.push_back(ops[1]);
+				return ops[1].value;
+			}
+		}
 
 		ops[1] = convertTo(ops[1], ops[0].type, ops[0].type.front().uniontype == type::POINTER);
 
@@ -2008,7 +2060,7 @@ const llvm::fltSemantics& getfloatsembytype(val val) {
 	else {
 		switch (val.type.front().spec.basicdeclspec.longspecsn)
 		case 1:
-			return llvm::APFloatBase::IEEEquad();
+			return llvm::APFloatBase::PPCDoubleDouble();
 	}
 	return llvm::APFloatBase::IEEEdouble();
 }
@@ -2030,14 +2082,6 @@ struct handlefpexpr : basehndl {
 		return [](basehndl* pnhdl) -> basehndl* {
 			return new (pnhdl) handlefpexpr{};
 		};
-	}
-
-	virtual void shifttwovalues(bool bright) override {
-		auto &firstop = *(----immidiates.end());
-		
-		firstop = convertTo(firstop, {firstop.type.front().spec.basicdeclspec.basic[1] == "double" ? basiclong : basicsz});
-
-		basehndl::shifttwovalues(bright);
 	}
 
 	virtual void getnegative() override {
@@ -2162,6 +2206,10 @@ struct handlecnstexpr : handlefpexpr {
 		};
 	}
 
+	virtual void getnegative() override {
+		immidiates.back().constant = llvm::ConstantExpr::getNeg(immidiates.back().constant);
+	}
+
 	using val = ::val;
 
 	//std::list<val>& immidiates = basehndl::immidiates;
@@ -2219,6 +2267,8 @@ struct handlecnstexpr : handlefpexpr {
 
 	virtual void shifttwovalues(bool bright) override {
 		std::array ops = getops(false);
+
+		ops[0] = requireint(ops[0]);
 
 		ops[0] = integralpromotions(ops[0]);
 
@@ -2375,17 +2425,54 @@ static std::condition_variable maskupdconvar;
 
 static std::unordered_map<unsigned int, std::unordered_map<unsigned int, var>> scopevars_global;
 
-const std::list<::var>::reverse_iterator obtainvalbyidentifier(std::string ident, bool push, bool bfindtypedef,
-	std::pair<std::list<std::list<::var>>::reverse_iterator, std::list<::var>::reverse_iterator> rfromwhere) {
+THREAD_LOCAL static bool itervar_tmps_has_started;
+
+THREAD_LOCAL static bool iterscope_has_started;
+
+THREAD_LOCAL static bool itervar_tmps_has_extenral_checked;
+
+THREAD_LOCAL static bool start_from_params_started;
+
+THREAD_LOCAL static std::list<std::list<::var>>::reverse_iterator iterscope;
+
+THREAD_LOCAL static std::list<::var>::reverse_iterator itervar;
+
+THREAD_LOCAL static std::list<::var> tmps;
+
+THREAD_LOCAL static std::list<::var>::reverse_iterator itervar_tmps;
+
+THREAD_LOCAL static std::list<::var>::reverse_iterator start_from_params;
+
+static void reset_obtainvalbyidentifier_search() {
+	itervar_tmps_has_started = iterscope_has_started = itervar_tmps_has_extenral_checked = start_from_params_started = false;
+}
+
+static bool pop_obtainvalbyidentifier_last() {
+
+
+	for (; iterscope != scopevar.rend(); ) {
+		for (; itervar != iterscope->rend(); ) {
+			iterscope->erase(itervar.base());
+			return true;
+		}
+	}
+
+	for (; itervar_tmps != tmps.rend(); ) {
+		tmps.erase(itervar_tmps.base());
+		return true;
+	}
+
+	return false;
+}
+
+const std::optional<std::list<::var>::reverse_iterator> obtainvalbyidentifier(std::string ident, bool push, bool bfindtypedef, bool bcontinue) {
 
 	//unsigned long currpos = 0;
 	//const unsigned long long lastpos = getcurrpos();
 
-	std::list<::var>::reverse_iterator var{};
+	std::optional<std::list<::var>::reverse_iterator> var{};
 
 	//unsigned sofar = evalperlexpruv("scalar($nfilescopesrequested)");
-
-	THREAD_LOCAL static std::list<::var> tmps;
 
 	int id;
 
@@ -2393,48 +2480,82 @@ tryagain:
 	if (push && scopevar.size() > 1) {
 		auto& currfunctype = currfunc->type.front().spec.func.parametertypes_list.front();
 
-		if (auto findparam = std::find_if(
-			currfunctype.rbegin(), currfunctype.rend(),
+		if(!start_from_params_started || !bcontinue) {
+			start_from_params_started = bcontinue;
+			start_from_params = currfunctype.rbegin();
+		}
+
+		if (start_from_params = std::find_if(
+			start_from_params, currfunctype.rend(),
 			[&](const ::var& param) { return param.identifier == ident; });
-			findparam != currfunctype.rend())
+			start_from_params != currfunctype.rend())
 		{
-			var = findparam;
+			var = start_from_params;
+			++start_from_params;
 			goto found;
 		}
 	}
 
-	for (std::list<std::list<::var>>::reverse_iterator iterscope = rfromwhere.first == dummypar.rbegin() ? scopevar.rbegin() : rfromwhere.first; iterscope != scopevar.rend(); ++iterscope) {
-		for (std::list<::var>::reverse_iterator itervar = iterscope == rfromwhere.first ? rfromwhere.second : iterscope->rbegin(); itervar != iterscope->rend(); ++itervar) {
+	if(!iterscope_has_started || !bcontinue) {
+		iterscope_has_started = bcontinue;
+		iterscope = scopevar.rbegin();
+		itervar = iterscope->rbegin();
+	}
+
+	for (; iterscope != scopevar.rend(); ++iterscope, itervar = iterscope->rbegin()) {
+		for (; itervar != iterscope->rend(); ++itervar) {
 			if (itervar->identifier == ident && (bfindtypedef == (itervar->linkage == "typedef"))) {
 				var = itervar;
+				++itervar;
 				goto found;
 			}
 		}
 	}
-	for (std::list<::var>::reverse_iterator itervar = tmps.rbegin(); itervar != tmps.rend(); ++itervar) {
-		if (itervar->identifier == ident && (bfindtypedef == (itervar->linkage == "typedef"))) {
-			var = itervar;
+
+
+
+	if(!itervar_tmps_has_started || !bcontinue) {
+checktmpagain:
+		itervar_tmps_has_started = bcontinue;
+		itervar_tmps = tmps.rbegin();
+	}
+
+	for (; itervar_tmps != tmps.rend(); ++itervar_tmps) {
+		if (itervar_tmps->identifier == ident && (bfindtypedef == (itervar_tmps->linkage == "typedef"))) {
+			var = itervar_tmps;
+			++itervar_tmps;
 			goto found;
 		}
 	}
 
-	id = callstring("waitforid", ident.c_str(), ident.length());
-	
-	if (id != -1) {
-		do {
-			printf("looking for %d - %d\n", id, evalperlexpruv("pos()"));
-			//registerndwait(id);
-			//std::unique_lock lck{all};
-			std::unique_lock lck{boradcastingscope};
-			if (scopevars_global.contains(id) && (bfindtypedef == (scopevars_global[id][stringhash(ident.c_str())].linkage == "typedef"))) {
-				tmps.push_back(scopevars_global[id][stringhash(ident.c_str())]);
-				var = tmps.rbegin();
-				goto found;
-			}
+	if (!bcontinue || !itervar_tmps_has_extenral_checked) {
 
-			throw std::logic_error {"unreachable " + ident};
+		itervar_tmps_has_extenral_checked = bcontinue;
+
+		id = callstring("waitforid", ident.c_str(), ident.length());
+		
+		if (id != -1) {
+			do {
+				bool updated = false;
+				printf("looking for %d - %d\n", id, evalperlexpruv("pos()"));
+				//registerndwait(id);
+				//std::unique_lock lck{all};
+				std::unique_lock lck{boradcastingscope};
+				for (auto i : ranges::iota_view<size_t, size_t>(0zu, id + 1)) {
+					tmps.push_back(scopevars_global[stringhash(ident.c_str())][i]);
+					updated = true;
+					//var = tmps.rbegin();
+					//goto found;
+				}
+
+				if (updated) {
+					goto checktmpagain;
+				}
+
+				throw std::logic_error {"unreachable " + ident};
+			}
+			while (1);
 		}
-		while (1);
 	}
 	{
 	undef: 
@@ -2451,6 +2572,7 @@ tryagain:
 		::var newvar{ {.identifier = ident} };
 		newvar.type = newvar.type = { fntype, basicint };
 		newvar.firstintroduced = nullptr;
+		newvar.ispotentiallywrong = true;
 		addvar(newvar);
 		scopevar.begin()->push_back(newvar);
 
@@ -2477,17 +2599,17 @@ found:
 
 	llvm::Value* pglobal;
 
-	immidiate.identifier = var->identifier;
+	immidiate.identifier = var.value()->identifier;
 
-	immidiate.type = var->type;
+	immidiate.type = var.value()->type;
 
-	pglobal = immidiate.value = var->requestValue();
+	pglobal = immidiate.value = var.value()->requestValue();
 
 	printvaltype(immidiate);
 
 	immidiate.lvalue = immidiate.value;
 
-	if (immidiate.value && immidiate.type.front().uniontype != type::FUNCTION && !var->isconstant)
+	if (immidiate.value && immidiate.type.front().uniontype != type::FUNCTION && !var.value()->isconstant)
 		immidiate.value = llvmbuilder->CreateLoad(immidiate.requestType(), immidiate.value);
 
 	phndl->immidiates.push_back(immidiate);
@@ -2693,19 +2815,23 @@ static std::string mangle(std::list<::type> type) {
 	return ss.str();
 }
 
-static std::list<::var>::reverse_iterator obtainpreviosfunction(std::string ident) {
+static bool comparefunctiontypeparameters(::type fntypeone, ::type fntypetwo);
+
+static bool hasderivatives(std::string ident, ::type tocompare) {
 
 	std::list<::var>::reverse_iterator iter;
 
-	for (iter = scopevar.front().rbegin();
-		scopevar.front().rend() != (iter = obtainvalbyidentifier(ident, false, false, { --scopevar.rend(), iter }));
-		++iter) {
-
-		if (iter->value)
-			return iter;
+	while(auto val = obtainvalbyidentifier(ident, false, false, true)) {
+		//if (iter->value)
+		iter = val.value();
+		if (iter->type.front().spec.func.hasknownderivatives || !comparefunctiontypeparameters(iter->type.front(), tocompare)) {
+			reset_obtainvalbyidentifier_search();
+			return iter->type.front().spec.func.hasknownderivatives = true;
+		}
 	}
 
-	return iter;
+	reset_obtainvalbyidentifier_search();
+	return false;
 }
 
 bool comparetwotypesdeep(std::list<::type> first, std::list<::type> second);
@@ -2766,17 +2892,7 @@ void addvar(var& lastvar, llvm::Constant* pInitializer) {
 			std::list<::var>::reverse_iterator pfuncother;
 			lastvar.value = nullptr;
 			printtype(lastvar.requestType(), lastvar.identifier);
-			bool bmangle = false;
-			/*if ((pfuncother = obtainpreviosfunction(lastvar.identifier)) != scopevar.front().rend()) {
-				if (!comparefunctiontypeparameters(pfuncother->type.front(), lastvar.type.front())) {
-					pfuncother->value->setName(pfuncother->identifier + mangle(pfuncother->type));
-					//overloadflag[stringhash(lastvar.identifier.c_str())] = true;
-					bmangle = true;
-				}
-				else if (dyn_cast<llvm::Function> (pfuncother->value)->getName().contains('@')) {
-					bmangle = true;
-				}
-			}*/
+			bool bmangle = hasderivatives(lastvar.identifier, lastvar.type.front());
 			std::string mangledfnname = bmangle ? lastvar.identifier + mangle(lastvar.type) : lastvar.identifier;
 			lastvar.value = mainmodule->getFunction(mangledfnname);
 			if (!lastvar.value) {
@@ -2844,7 +2960,7 @@ DLL_EXPORT void endbuildingstructorunion() {
 		}
 		{
 			std::unique_lock lck{boradcastingstrc};
-			structorunionmembers_global[idtostore][stringhash(fullident.c_str())] = std::move(elemtopush);
+			structorunionmembers_global[stringhash(fullident.c_str())][idtostore] = std::move(elemtopush);
 		}
 		callint("broadcastid", idtostore, fullident.c_str(), fullident.size());
 	}
@@ -2952,6 +3068,10 @@ val coerceto(val target, std::list<::type> to) {
 	if (comparetwotypesshallow(target.type, to)) {
 		target.type = to;
 		return target;
+	}
+
+	if(target.type.front().uniontype == type::FUNCTION) {
+		target.type.pop_front();
 	}
 
 	if (to.front().uniontype == type::BASIC && to.front().spec.basicdeclspec.basic[1] == "[[nbitint]]") {
@@ -3431,8 +3551,8 @@ tryagain:
 
 					std::unique_lock lck{boradcastingstrc};
 
-					if (structorunionmembers_global.contains(id)) {
-						tmps.push_back(structorunionmembers_global[id][stringhash(fullident.c_str())]);
+					if (structorunionmembers_global[stringhash(fullident.c_str())].contains(id)) {
+						tmps.push_back(structorunionmembers_global[stringhash(fullident.c_str())][id]);
 						var = &tmps.back();
 						return true;
 					}
@@ -3546,7 +3666,7 @@ llvm::Type* buildllvmtypefull(std::list<type>& refdecltypevector) {
 				throw std::logic_error{ "enum should have int type" };
 			default: { // typedef
 				//bjastypedef = true;
-				pcurrtype = obtainvalbyidentifier(type->spec.basicdeclspec.basic[3], false, true)->requestType();
+				pcurrtype = obtainvalbyidentifier(type->spec.basicdeclspec.basic[3], false, true).value()->requestType();
 				return false;
 			}
 			}
@@ -3650,6 +3770,8 @@ void fixuplabels();
 
 DLL_EXPORT void endreturn(std::unordered_map<unsigned, std::string>&& hashes);
 
+DLL_EXPORT void dumpmodule();
+
 DLL_EXPORT void endscope() {
 	// nonconstructable.mainmodule.
 	// endexpression();
@@ -3667,6 +3789,13 @@ DLL_EXPORT void endscope() {
 			endreturn({});
 		pcurrblock.pop_back();
 		fixuplabels();
+	}
+	//dumpmodule();
+
+	if (scopevar.size() == 1) {
+		llvm::raw_null_ostream ostr{};
+		llvm::AssemblyAnnotationWriter wrt{};
+		mainmodule->print(ostr, &wrt);
 	}
 }
 
@@ -3909,19 +4038,17 @@ DLL_EXPORT void endfunctioncall() {
 
 	if (calleevalntype.type.front().uniontype != type::POINTER) {
 
-		goto rest;
-		
 		std::list<std::pair<std::list<::var>::reverse_iterator, int>> revfunsrank;
 
 		std::list<::var>::reverse_iterator iter;
 
-		for (iter = scopevar.front().rbegin();
-			scopevar.front().rend() != (iter = obtainvalbyidentifier(calleevalntype.identifier, false, false, {--scopevar.rend(), iter}));
-			++iter) {
-
+		while (auto val = obtainvalbyidentifier(calleevalntype.identifier, false, false, true)) {
+			iter = val.value();
 			if(iter->type.front().uniontype == type::FUNCTION)
 				revfunsrank.push_back({ iter, 0 });
 		}
+
+		reset_obtainvalbyidentifier_search();
 
 		if (revfunsrank.size() <= 1)
 			goto rest;
@@ -3973,6 +4100,14 @@ DLL_EXPORT void endfunctioncall() {
 	}
 
 rest:
+
+	{
+		std::list newttype = { fntype };
+
+		newttype.splice(newttype.end(), calleevalntype.type, ++calleevalntype.type.begin(), calleevalntype.type.end());
+
+		calleevalntype.type = std::move(newttype);
+	}
 
 	llvm::Value* callee = calleevalntype.value;
 
@@ -4120,7 +4255,7 @@ DLL_EXPORT void endqualifs(std::unordered_map<unsigned, std::string>&& hashes) {
 		vartopush.strip();
 		{
 			std::unique_lock lck{boradcastingscope};
-			scopevars_global[idtostore][stringhash(lastvar.identifier.c_str())] = std::move(vartopush);
+			scopevars_global[stringhash(lastvar.identifier.c_str())][idtostore] = std::move(vartopush);
 		}
 		callint("broadcastid", idtostore, lastvar.identifier.c_str(), lastvar.identifier.size());
 	}
@@ -4509,9 +4644,9 @@ DLL_EXPORT void dumpmodule() {
 					outputll{ mainmodule->getName().str() + ".ll",
 								code };
 				if (!record.is_open()) {
-					//llvm::WriteBitcodeToFile(*mainmodule, output);
-					mainmodule->print(outputll, nullptr);
 					llvm::WriteBitcodeToFile(*mainmodule, output);
+					//mainmodule->print(outputll, nullptr);
+					//llvm::WriteBitcodeToFile(*mainmodule, output);
 				}
 			//}
 			//areweinuser = 0;
@@ -5338,7 +5473,7 @@ virtual void create_default_case_67() { addDefaultCase(); }
 #endif
 const llvm::fltSemantics& getfltsemfromtype(::type flttype) {
 	return flttype.spec.basicdeclspec.basic[1] == "double" ?
-		flttype.spec.basicdeclspec.longspecsn == 1 ? llvm::APFloatBase::IEEEquad()
+		flttype.spec.basicdeclspec.longspecsn == 1 ? llvm::APFloatBase::PPCDoubleDouble()
 		: llvm::APFloatBase::IEEEdouble() :
 		(assert(flttype.spec.basicdeclspec.basic[1] == "float"),
 			llvm::APFloatBase::IEEEsingle());
@@ -5378,7 +5513,9 @@ rest:
 		pllvmtype = llvm::Type::getDoubleTy((*llvmctx)),
 		llvm::APFloatBase::IEEEdouble() : ranges::contains(std::array{ "f", "F" }, postfix) ? currtype.back().spec.basicdeclspec.basic[1] = "float",
 		pllvmtype = llvm::Type::getFloatTy((*llvmctx)),
-		llvm::APFloatBase::IEEEsingle() : (assert(ranges::contains(std::array{ "l", "L" }, postfix)), currtype.back().spec.basicdeclspec.basic[1] = "double", currtype.back().spec.basicdeclspec.longspecsn = 1, pllvmtype = llvm::Type::getFP128Ty((*llvmctx)), llvm::APFloatBase::IEEEquad());
+		llvm::APFloatBase::IEEEsingle() : (assert(ranges::contains(std::array{ "l", "L" }, postfix)),
+		 currtype.back().spec.basicdeclspec.basic[1] = "double", currtype.back().spec.basicdeclspec.longspecsn = 1,
+		  pllvmtype = llvm::Type::getPPC_FP128Ty((*llvmctx)), llvm::APFloatBase::PPCDoubleDouble());
 
 	llvm::APFloat floatlit{ floatsem };
 
