@@ -537,6 +537,7 @@ U32 docall(const char *name, size_t szname, void *phashmap) {
 	if (!sigsetjmp(docalljmp, 1) && !binabrupt) {
 		//printf("@thread %p\n", &matchpos);
 		((void (*)(void* phashmap))pfunc)(phashmap);
+		//probemodule();
 		areweinuser = 0;
 		return 0;
 	}

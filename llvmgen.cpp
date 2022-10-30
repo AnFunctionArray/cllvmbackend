@@ -695,7 +695,6 @@ struct type {
 		std::list<std::list<var>> parametertypes_list{ 1 };
 		bool bisvariadic;
 		std::string callconv;
-		bool hasknownderivatives = false;
 	};
 
 	type(const type& a) : spec{ a.uniontype }, uniontype{ a.uniontype } {
@@ -1557,7 +1556,10 @@ struct basehndl /* : bindings_compiling*/ {
 	auto &requireint(::val &op) {
 		if (!bIsBasicInteger(op.type.front()) ) {
 			extern val coerceto(val target, std::list<::type> to);
-			op = coerceto(op, { nbitint });
+			if(op.type.front().uniontype != type::FUNCTION && op.type.front().uniontype != type::POINTER)
+				op = coerceto(op, { nbitint });
+			else
+				op = convertTo(op, { basicsz });
 		}
 		return op;
 	}
@@ -1885,19 +1887,27 @@ struct basehndl /* : bindings_compiling*/ {
 			if (ops[i].type.front().uniontype == type::POINTER ||
 				ops[i].type.front().uniontype == type::ARRAY)
 				if (ops[!i].type.front().uniontype == type::BASIC) {
+					ops[!i] = requireint(ops[!i]);
 					immidiates.erase(----immidiates.end(), immidiates.end());
 					bool isarray = ops[i].type.front().uniontype == type::ARRAY;
 					auto& targetplain = ops[i];
 					llvm::Type* targettype = targetplain.requestType();
 					llvm::Value* target = isarray ? targetplain.lvalue : targetplain.value;
 					std::vector<llvm::Value*> gepinidces{ ops[!i].value };
-					ops[i].type.erase(ops[i].type.begin());
 
 					if (isarray)
 						gepinidces.insert(gepinidces.begin(), dyn_cast<llvm::Value>(llvmbuilder->getInt32(0)));
 					//	targettype = targettype->getPointerTo();
 					else 
 						targettype = ops[i].requestType();
+					
+					ops[i].type.erase(ops[i].type.begin());
+
+					if(!ops[i].type.front().cachedtype) {
+						ops[i].requestType();
+					}
+					
+					assert(!targettype->isFunctionTy());
 
 					ops[!i].value = !bminus
 						? ops[!i].value
@@ -2528,7 +2538,7 @@ checktmpagain:
 		}
 	}
 
-	if (!bcontinue || !itervar_tmps_has_extenral_checked) {
+	if (!bcontinue) {
 
 		itervar_tmps_has_extenral_checked = bcontinue;
 
@@ -2537,13 +2547,27 @@ checktmpagain:
 		if (id != -1) {
 			do {
 				bool updated = false;
-				printf("looking for %d - %d\n", id, evalperlexpruv("pos()"));
+				//printf("looking for %d - %d\n", id, evalperlexpruv("pos()"));
 				//registerndwait(id);
 				//std::unique_lock lck{all};
-				std::unique_lock lck{boradcastingscope};
+				{
+					std::unique_lock lck{boradcastingscope};
+					for (auto i : ranges::iota_view<size_t, size_t>(0zu, id + 1)) {
+						tmps.push_back(scopevars_global[stringhash(ident.c_str())][i]);
+						updated = true;
+						//var = tmps.rbegin();
+						//goto found;
+					}
+				}
+
+				auto iter = tmps.rbegin();
+				
 				for (auto i : ranges::iota_view<size_t, size_t>(0zu, id + 1)) {
-					tmps.push_back(scopevars_global[stringhash(ident.c_str())][i]);
-					updated = true;
+					if(iter->linkage != "typedef") {
+						iter->linkage = "extern";
+						addvar(*iter);
+					}
+					++iter;
 					//var = tmps.rbegin();
 					//goto found;
 				}
@@ -2691,6 +2715,9 @@ DLL_EXPORT void addescapesequencetostring(std::unordered_map<unsigned, std::stri
 	case "\\'"_h:
 		currstring += '\'';
 		return;
+	case "\\\""_h:
+		currstring += '\"';
+		return;
 	case "\\\\"_h:
 		currstring += '\\';
 		return;
@@ -2712,12 +2739,16 @@ DLL_EXPORT void addescapesequencetostring(std::unordered_map<unsigned, std::stri
 	case "\\v"_h:
 		currstring += '\v';
 		return;
+	case "\\0"_h:
+		currstring += '\0';
+		return;
 	}
 
-	escape[0] = '0';
-	char num = std::stoull(escape);
+	escape.erase(0, 2);
 
-	currstring += num;
+	escape.erase(0, escape.find_first_not_of('0'));
+
+	currstring += (char)std::stoi(escape, nullptr, hashes.contains("ishex"_h) ? 0x10 : 8);
 }
 
 DLL_EXPORT void begin_ternary() {
@@ -2821,12 +2852,18 @@ static bool hasderivatives(std::string ident, ::type tocompare) {
 
 	std::list<::var>::reverse_iterator iter;
 
+	static THREAD_LOCAL std::unordered_set<std::string> fastmap;
+
+	if(fastmap.contains(ident)) return true;
+
 	while(auto val = obtainvalbyidentifier(ident, false, false, true)) {
 		//if (iter->value)
+
 		iter = val.value();
-		if (iter->type.front().spec.func.hasknownderivatives || !comparefunctiontypeparameters(iter->type.front(), tocompare)) {
+		if (!comparefunctiontypeparameters(iter->type.front(), tocompare)) {
 			reset_obtainvalbyidentifier_search();
-			return iter->type.front().spec.func.hasknownderivatives = true;
+			fastmap.insert(ident);
+			return true;
 		}
 	}
 
@@ -3546,7 +3583,7 @@ tryagain:
 			
 			if (id != -1) {
 				do {
-					printf("looking for %d - %d\n", id, evalperlexpruv("pos()"));
+					//printf("looking for %d - %d\n", id, evalperlexpruv("pos()"));
 					//registerndwait(id);
 
 					std::unique_lock lck{boradcastingstrc};
@@ -3697,7 +3734,7 @@ llvm::Type* buildllvmtypefull(std::list<type>& refdecltypevector) {
 				[&](::type& type) {
 					return ranges::contains(std::array{ ::type::BASIC, ::type::POINTER }, type.uniontype);
 				})); typeiter != refdecltypevector.rend(); ++typeiter) {
-			if ((typeiter->cachedtype) || (!lambdas[typeiter->uniontype](typeiter), false))
+			if ((typeiter->cachedtype, false) || (!lambdas[typeiter->uniontype](typeiter), false))
 				pcurrtype = typeiter->cachedtype;
 			else
 				typeiter->cachedtype = pcurrtype;
@@ -3772,6 +3809,14 @@ DLL_EXPORT void endreturn(std::unordered_map<unsigned, std::string>&& hashes);
 
 DLL_EXPORT void dumpmodule();
 
+DLL_EXPORT void probemodule() {
+	if (scopevar.size() == 1) {
+		llvm::raw_null_ostream ostr{};
+		llvm::AssemblyAnnotationWriter wrt{};
+		mainmodule->print(ostr, &wrt);
+	}
+}
+
 DLL_EXPORT void endscope() {
 	// nonconstructable.mainmodule.
 	// endexpression();
@@ -3790,13 +3835,10 @@ DLL_EXPORT void endscope() {
 		pcurrblock.pop_back();
 		fixuplabels();
 	}
-	//dumpmodule();
 
-	if (scopevar.size() == 1) {
-		llvm::raw_null_ostream ostr{};
-		llvm::AssemblyAnnotationWriter wrt{};
-		mainmodule->print(ostr, &wrt);
-	}
+	//probemodule();
+	/*dumpmodule();
+	dyn_cast<llvm::Function>(currfunc->value)->eraseFromParent();*/
 }
 
 DLL_EXPORT void endexpression() { phndl->immidiates.clear(); }
@@ -3990,7 +4032,15 @@ DLL_EXPORT void endswitch() {
 
 DLL_EXPORT void addCase() {
 	splitbb("", 0);
-	currswitch.back().first->addCase(llvm::dyn_cast<llvm::ConstantInt> (phndl->immidiates.back().value), pcurrblock.back());
+	auto &lastval = phndl->immidiates.back();
+
+	long long val = lastval.type.front().spec.basicdeclspec.basic[0] == "unsigned" ?
+		 llvm::dyn_cast<llvm::ConstantInt> (lastval.constant)->getZExtValue() : 
+		 llvm::dyn_cast<llvm::ConstantInt> (lastval.constant)->getSExtValue();
+
+	lastval.constant = llvm::ConstantInt::get(currswitch.back().first->getCondition()->getType(), val, lastval.type.front().spec.basicdeclspec.basic[0] != "unsigned");
+	
+	currswitch.back().first->addCase(llvm::dyn_cast<llvm::ConstantInt> (lastval.constant), pcurrblock.back());
 	phndl->immidiates.pop_back();
 }
 
@@ -4101,13 +4151,13 @@ DLL_EXPORT void endfunctioncall() {
 
 rest:
 
-	{
+	/*{
 		std::list newttype = { fntype };
 
 		newttype.splice(newttype.end(), calleevalntype.type, ++calleevalntype.type.begin(), calleevalntype.type.end());
 
 		calleevalntype.type = std::move(newttype);
-	}
+	}*/
 
 	llvm::Value* callee = calleevalntype.value;
 
@@ -4253,6 +4303,7 @@ DLL_EXPORT void endqualifs(std::unordered_map<unsigned, std::string>&& hashes) {
 		assert(idtostore != -1);
 		auto vartopush = lastvar;
 		vartopush.strip();
+		vartopush.linkage = vartopush.linkage != "typedef" ? "extern" : vartopush.linkage;
 		{
 			std::unique_lock lck{boradcastingscope};
 			scopevars_global[stringhash(lastvar.identifier.c_str())][idtostore] = std::move(vartopush);
@@ -4644,7 +4695,8 @@ DLL_EXPORT void dumpmodule() {
 					outputll{ mainmodule->getName().str() + ".ll",
 								code };
 				if (!record.is_open()) {
-					llvm::WriteBitcodeToFile(*mainmodule, output);
+					mainmodule->print(outputll, nullptr);
+					//llvm::WriteBitcodeToFile(*mainmodule, output);
 					//mainmodule->print(outputll, nullptr);
 					//llvm::WriteBitcodeToFile(*mainmodule, output);
 				}
