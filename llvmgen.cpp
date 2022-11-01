@@ -1888,6 +1888,7 @@ struct basehndl /* : bindings_compiling*/ {
 				ops[i].type.front().uniontype == type::ARRAY)
 				if (ops[!i].type.front().uniontype == type::BASIC) {
 					ops[!i] = requireint(ops[!i]);
+
 					immidiates.erase(----immidiates.end(), immidiates.end());
 					bool isarray = ops[i].type.front().uniontype == type::ARRAY;
 					auto& targetplain = ops[i];
@@ -2439,7 +2440,7 @@ THREAD_LOCAL static bool itervar_tmps_has_started;
 
 THREAD_LOCAL static bool iterscope_has_started;
 
-THREAD_LOCAL static bool itervar_tmps_has_extenral_checked;
+THREAD_LOCAL static bool itervar_tmps_has_extenral_could_not_be_checked;
 
 THREAD_LOCAL static bool start_from_params_started;
 
@@ -2454,7 +2455,7 @@ THREAD_LOCAL static std::list<::var>::reverse_iterator itervar_tmps;
 THREAD_LOCAL static std::list<::var>::reverse_iterator start_from_params;
 
 static void reset_obtainvalbyidentifier_search() {
-	itervar_tmps_has_started = iterscope_has_started = itervar_tmps_has_extenral_checked = start_from_params_started = false;
+	itervar_tmps_has_started = iterscope_has_started = itervar_tmps_has_extenral_could_not_be_checked = start_from_params_started = false;
 }
 
 static bool pop_obtainvalbyidentifier_last() {
@@ -2534,13 +2535,14 @@ checktmpagain:
 		if (itervar_tmps->identifier == ident && (bfindtypedef == (itervar_tmps->linkage == "typedef"))) {
 			var = itervar_tmps;
 			++itervar_tmps;
+			itervar_tmps_has_extenral_could_not_be_checked = bcontinue;
 			goto found;
 		}
 	}
 
-	if (!bcontinue) {
+	if (!bcontinue || !itervar_tmps_has_extenral_could_not_be_checked) {
 
-		itervar_tmps_has_extenral_checked = bcontinue;
+		itervar_tmps_has_extenral_could_not_be_checked = bcontinue;
 
 		id = callstring("waitforid", ident.c_str(), ident.length());
 		
@@ -3549,7 +3551,7 @@ const std::list<::var>* getstructorunion(bascitypespec& basic) {
 
 	std::string ident = basic.basic[3];
 
-	if(!ident.empty())
+	if(!ident.empty()) {
 tryagain:
 	std::find_if(structorunionmembers.rbegin(), structorunionmembers.rend(),
 		[&](std::list<std::list<::var>>& scope) {
@@ -3562,19 +3564,22 @@ tryagain:
 
 			if (iter != scope.rend())
 				return var = &*iter, true;
+		});
 
-			THREAD_LOCAL static std::list<std::list<::var>> tmps;
+		THREAD_LOCAL static std::list<std::list<::var>> tmps;
 
-			iter = std::find_if(
+		if (!var) {
+			auto iter = std::find_if(
 				tmps.rbegin(), tmps.rend(),
 				[&](const std::list<::var>& scopevar) {
 					return scopevar.front().identifier == ident &&
 						scopevar.front().type.front().spec.basicdeclspec.basic[0] == basic.basic[0];
 				});
 
-			if (iter != tmps.rend())
-				return var = &*iter, true;
-
+			if (iter != tmps.rend()) {
+				var = &*iter;
+				goto test;
+			}
 			//unsigned sofar = evalperlexpruv("scalar($nfilescopesrequested)");
 
 			std::string fullident = basic.basic[0] + " " + ident;
@@ -3586,22 +3591,20 @@ tryagain:
 					//printf("looking for %d - %d\n", id, evalperlexpruv("pos()"));
 					//registerndwait(id);
 
-					std::unique_lock lck{boradcastingstrc};
-
 					if (structorunionmembers_global[stringhash(fullident.c_str())].contains(id)) {
+						std::unique_lock lck{boradcastingstrc};
 						tmps.push_back(structorunionmembers_global[stringhash(fullident.c_str())][id]);
 						var = &tmps.back();
-						return true;
+						break;
 					}
 
 					throw std::logic_error {"unreachable " + fullident};
 				}
 				while (1);
 			}
-
-			return false;
-		});
-
+		}
+	}
+test:
 	if (!var) var = static_cast<std::list<::var>*>(basic.pexternaldata);
 
 	if (var && !var->front().pllvmtype)
