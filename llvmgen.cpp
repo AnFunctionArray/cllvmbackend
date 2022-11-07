@@ -17,6 +17,8 @@ extern "C" void __cdecl _wassert(
 }
 #endif
 #endif
+#include "llvm/IR/GlobalAlias.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/IR/AssemblyAnnotationWriter.h"
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -1265,15 +1267,17 @@ struct basehndl /* : bindings_compiling*/ {
 
 	val integralpromotions(val in) {
 
-		if(in.type.front().uniontype != type::POINTER && in.type.front().uniontype != type::FUNCTION) {
-			std::list type = { nbitint };
-			type.front().spec.basicdeclspec.longspecsn = pdatalayout->getTypeSizeInBits(in.requestType());
-			in = convertTo(in, type, false);
+		if(!bIsBasicFloat(in.type.front()) && !bIsBasicInteger(in.type.front())) {
+			if(in.type.front().uniontype != type::POINTER && in.type.front().uniontype != type::FUNCTION) {
+				std::list type = { nbitint };
+				type.front().spec.basicdeclspec.longspecsn = pdatalayout->getTypeSizeInBits(in.requestType());
+				in = convertTo(in, type, false);
+			}
+			else {
+				in = convertTo(in, { basicsz });
+			}
 		}
-		else {
-			in = convertTo(in, { basicsz });
-		}
-
+#if 0
 		assert(in.type.size() == 1);
 
 		std::cout << "promoting" << std::endl;
@@ -1301,6 +1305,7 @@ struct basehndl /* : bindings_compiling*/ {
 			in.type.back().spec.basicdeclspec.basic[0] = "";
 			in.type.back().spec.basicdeclspec.basic[1] = "int";
 		}
+#endif
 		return in;
 	}
 
@@ -1556,8 +1561,12 @@ struct basehndl /* : bindings_compiling*/ {
 	auto &requireint(::val &op) {
 		if (!bIsBasicInteger(op.type.front()) ) {
 			extern val coerceto(val target, std::list<::type> to);
-			if(op.type.front().uniontype != type::FUNCTION && op.type.front().uniontype != type::POINTER)
-				op = coerceto(op, { nbitint });
+			if(op.type.front().uniontype != type::FUNCTION && op.type.front().uniontype != type::POINTER
+				&& !bIsBasicFloat(op.type.front())) {
+				std::list type = { nbitint };
+				type.front().spec.basicdeclspec.longspecsn = pdatalayout->getTypeSizeInBits(op.requestType());
+				op = convertTo(op, type, false);
+			}
 			else
 				op = convertTo(op, { basicsz });
 		}
@@ -1660,6 +1669,8 @@ struct basehndl /* : bindings_compiling*/ {
 
 	virtual void shifttwovalues(bool bright) {
 		std::array ops = getops(false);
+
+		ops[0] = requireint(ops[0]);
 
 		ops[0] = integralpromotions(ops[0]);
 
@@ -1866,7 +1877,7 @@ struct basehndl /* : bindings_compiling*/ {
 			}
 		}
 
-		ops[1] = convertTo(ops[1], ops[0].type, ops[0].type.front().uniontype == type::POINTER);
+		ops[1] = convertTo(ops[1], ops[0].type, ops[0].type.front().uniontype == type::POINTER && ops[1].lvalue);
 
 		printtype(ops[0].lvalue->getType(),
 			ops[0].identifier);
@@ -2836,7 +2847,7 @@ static std::string manglefnparameters(::type type) {
 static std::string mangle(std::list<::type> type) {
 	std::stringstream ss;
 
-	ss << "@";
+	ss << "_type_";
 
 	for (auto curr : type) {
 		(curr.uniontype == type::ARRAY && (ss << "[" << curr.spec.array.nelems << "]", true))
@@ -2933,6 +2944,9 @@ void addvar(var& lastvar, llvm::Constant* pInitializer) {
 			printtype(lastvar.requestType(), lastvar.identifier);
 			bool bmangle = hasderivatives(lastvar.identifier, lastvar.type.front());
 			std::string mangledfnname = bmangle ? lastvar.identifier + mangle(lastvar.type) : lastvar.identifier;
+			if(mangledfnname.size() > 1 && mangledfnname.starts_with("_")) {
+				mangledfnname.erase(mangledfnname.begin());
+			}
 			lastvar.value = mainmodule->getFunction(mangledfnname);
 			if (!lastvar.value) {
 				lastvar.value = llvm::Function::Create(
@@ -2988,6 +3002,8 @@ DLL_EXPORT void endbuildingstructorunion() {
 	laststruc = currtypevectorbeingbuild.back().p;
 
 	currtypevectorbeingbuild.pop_back();
+
+	laststruc->back().linkage = "[[completed]]";
 
 	if (pcurrblock.empty())  {
 		auto fullident = laststruc->front().type.front().spec.basicdeclspec.basic[0] +  " " + laststruc->front().identifier;
@@ -3094,6 +3110,8 @@ bool comparetwotypesshallow(std::list<::type> one, std::list<::type> two) {
 
 	switch (iterone->uniontype)
 		if (0) case type::ARRAY:
+			return itertwo->uniontype == iterone->uniontype && itertwo->spec.array.nelems == iterone->spec.array.nelems;
+		else if (0)
 		case type::POINTER:
 		case type::FUNCTION:
 			return itertwo->uniontype == iterone->uniontype;
@@ -3118,41 +3136,27 @@ val coerceto(val target, std::list<::type> to) {
 		to.front().cachedtype = nullptr;
 	}
 
-	const unsigned maxbytes = pdatalayout->getTypeStoreSize(target.requestType());
-	const unsigned minbytes = pdatalayout->getTypeStoreSize(buildllvmtypefull(to));
-
 	var tmp = var{ to };
 	addvar(tmp);
-	type arrty{ type::ARRAY };
-
-	arrty.spec.array.nelems = std::min(maxbytes, minbytes);
-	//arrty.spec.array.qualifiers[0] = 1;
-
-	std::list<type> arrtyls{ arrty, unsch };
 
 	llvm::Value* rvalue;
 	
 	if(target.lvalue)
-		rvalue = llvmbuilder->CreateLoad(buildllvmtypefull(arrtyls), target.lvalue);
+		rvalue = llvmbuilder->CreateLoad(tmp.pllvmtype, target.lvalue);
 	else {
 		var tmprval = var{ {target.type, nullptr, "[[tmprval]]"} };
 		addvar(tmprval);
 		llvmbuilder->CreateStore(target.value, tmprval.value);
-		rvalue = llvmbuilder->CreateLoad(buildllvmtypefull(arrtyls), tmprval.value);
+		rvalue = llvmbuilder->CreateLoad(tmp.pllvmtype, tmprval.value);
 	}
 
 	/*if(tmp.requestType()->isIntegerTy())
 		llvmbuilder->CreateStore(phndl->getValZero(val{tmp}), tmp.value);*/
 
-	llvmbuilder->CreateStore(rvalue, tmp.value);
-
-	auto lval = tmp.value;
-
-	tmp.value = llvmbuilder->CreateLoad(tmp.pllvmtype, tmp.value);
-
 	val ret = { tmp };
 
-	ret.lvalue = lval;
+	ret.value = rvalue;
+	ret.lvalue = target.lvalue;
 
 	return ret;
 
@@ -3206,7 +3210,7 @@ petty:
 
 val convertTo(val target, std::list<::type> to, bool bdecay) {
 
-	return phndl->convertTo(target, to);
+	return phndl->convertTo(target, to, bdecay);
 }
 
 DLL_EXPORT void applycast() {
@@ -3222,7 +3226,7 @@ DLL_EXPORT void applycast() {
 
 	phndl->immidiates.pop_back();
 
-	target = convertTo(target, currtype);
+	target = convertTo(target, currtype, currtype.front().uniontype == type::POINTER && target.lvalue);
 
 	phndl->immidiates.push_back(target);
 
@@ -3562,7 +3566,7 @@ tryagain:
 						scopevar.front().type.front().spec.basicdeclspec.basic[0] == basic.basic[0];
 				});
 
-			if (iter != scope.rend())
+			if (iter != scope.rend() && iter->front().linkage == "[[completed]]")
 				return var = &*iter, true;
 		});
 
@@ -4060,8 +4064,8 @@ DLL_EXPORT void addDefaultCase() {
 }*/
 
 llvm::Value* floattodoubleifneeded(llvm::Value* possiblefloat) {
-	if (possiblefloat->getType()->isFloatTy())
-		return llvmbuilder->CreateFPCast(possiblefloat, llvm::Type::getFloatingPointTy((*llvmctx), llvm::APFloatBase::IEEEdouble()));
+	/*if (possiblefloat->getType()->isFloatTy())
+		return llvmbuilder->CreateFPCast(possiblefloat, llvm::Type::getFloatingPointTy((*llvmctx), llvm::APFloatBase::IEEEdouble()));*/
 	return possiblefloat;
 }
 
@@ -4186,8 +4190,11 @@ rest:
 
 	std::transform(
 		argsiter, ::immidiates.end(), std::back_inserter(immidiates),
-		[&](basehndl::val elem) { return !(breached = breached || iterparams == verylongthingy.end())
-		? convertTo(elem, iterparams++->type).value : floattodoubleifneeded(decay(elem).value); });
+		[&](basehndl::val elem) { 
+			auto iterparamslast = iterparams++;
+			return !(breached = breached || iterparamslast == verylongthingy.end())
+		? convertTo(elem, iterparamslast->type, iterparamslast->type.front().uniontype == type::POINTER
+		&& elem.lvalue).value : floattodoubleifneeded(decay(elem).value); });
 
 	::immidiates.erase(--argsiter, ::immidiates.end());
 
@@ -4216,10 +4223,10 @@ rest:
 
 DLL_EXPORT void endreturn(std::unordered_map<unsigned, std::string>&& hashes) {
 	//llvmbuilder->SetInsertPoint (pcurrblock.back ());
-	if (!hashes["returnval"_h].empty()) {
+	if (hashes.contains("returnval"_h)) {
 		auto currfunctype = currfunc->type;
 		currfunctype.pop_front();
-		auto op = convertTo(immidiates.back(), currfunctype);
+		auto op = convertTo(immidiates.back(), currfunctype, currfunctype.front().uniontype == type::POINTER && immidiates.back().lvalue);
 		llvmbuilder->CreateRet(op.value);
 	}
 	else {
@@ -4239,7 +4246,7 @@ DLL_EXPORT void endfunctionparamdecl(std::unordered_map<unsigned, std::string>&&
 
 	assert(functype.uniontype == type::FUNCTION);
 
-	functype.spec.func.bisvariadic = !hashes["rest"_h].empty();
+	functype.spec.func.bisvariadic = !hashes.contains("rest"_h);
 }
 
 /*DLL_EXPORT void continuedeclaration() {
@@ -4694,12 +4701,12 @@ DLL_EXPORT void dumpmodule() {
 				std::cout << "Dumping " << mainmodule->getName().str() << " ..." << std::endl;
 				std::error_code code{};
 				llvm::raw_fd_ostream output{
-					mainmodule->getName().str() + ".bc", code },
+					mainmodule->getName().str() + ".bc", code, llvm::sys::fs::CD_CreateAlways },
 					outputll{ mainmodule->getName().str() + ".ll",
-								code };
+								code, llvm::sys::fs::CD_CreateAlways };
 				if (!record.is_open()) {
 					mainmodule->print(outputll, nullptr);
-					//llvm::WriteBitcodeToFile(*mainmodule, output);
+					llvm::WriteBitcodeToFile(*mainmodule, output);
 					//mainmodule->print(outputll, nullptr);
 					//llvm::WriteBitcodeToFile(*mainmodule, output);
 				}
