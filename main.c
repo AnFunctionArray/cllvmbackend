@@ -250,7 +250,7 @@ struct retgetnamevalue getnamevalue(const char* nametoget) {
 XS__startmatching(), XS__callout(), XS__startmodule(), boot_DynaLoader(), endmodule()
 , XS__initthread1(), waitforthread(), preparethread(), XS__startmetaregex(), dumpabrupt(),
 endmoduleabrupt(), dumpmodule(), XS__flushfilescopes1(), XS__consumefilescopes1(),
-XS__registerthread1(), XS__broadcast1(), resetbufferthr(), XS__updateavailidents1();
+XS__registerthread1(), XS__broadcast1(), resetbufferthr(), XS__updateavailidents1(), reset_state();
 
 static void
 xs_init(pTHX)
@@ -273,6 +273,7 @@ xs_init(pTHX)
 	newXS("broadcast", XS__broadcast1, __FILE__);
 	//newXS("resetbuffer", resetbufferthr, __FILE__);
 	newXS("updateavailidents", XS__updateavailidents1, __FILE__);
+	newXS("reset_state", reset_state, __FILE__);
 }
 
 PerlInterpreter* my_perl; /***    The Perl interpreter    ***/
