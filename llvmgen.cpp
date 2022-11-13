@@ -3879,7 +3879,7 @@ DLL_EXPORT void endscope() {
 	if (scopevar.size() == 1) { //end of a function
 		if (!bareweinabrupt())
 			endreturn({});
-		pcurrblock.pop_back();
+		pcurrblock.clear();
 		fixuplabels();
 	}
 
@@ -3890,7 +3890,7 @@ DLL_EXPORT void endscope() {
 
 DLL_EXPORT void reset_state() {
 	scopevar.resize(1);
-	currtypevectorbeingbuild.clear();
+	currtypevectorbeingbuild.resize(1);
 	structorunionmembers.resize(1);
 	enums.resize(1);
 	scopevar.resize(1);
@@ -4325,7 +4325,7 @@ DLL_EXPORT void endqualifs(std::unordered_map<unsigned, std::string>&& hashes) {
 	if (!nontypedeflinkage.empty()) lastvar.linkage = nontypedeflinkage;
 
 	if (std::all_of(refbasic.begin(), refbasic.end(), [](const std::string& elem) {return elem.empty(); }))
-		if (lastvar.firstintroduced == nullptr) refbasic[1] = "int";
+		if (pcurrblock.empty()) refbasic[1] = "int";
 		else throw std::runtime_error{ "decl with no basic info" };
 
 	if (ranges::contains(std::array{ "struct", "union", "enum" }, refbasic[0]))
@@ -4354,7 +4354,7 @@ DLL_EXPORT void endqualifs(std::unordered_map<unsigned, std::string>&& hashes) {
 	/*if (lastvar.type().front().uniontype == type::FUNCTION) {
 		lastvar.requestValue();
 	}*/
-	if (lastvar.firstintroduced == nullptr && currtypevectorbeingbuild.back().currdecltype != currdecltypeenum::STRUCTORUNION 
+	if (pcurrblock.empty() && currtypevectorbeingbuild.back().currdecltype != currdecltypeenum::STRUCTORUNION 
 		&& currtypevectorbeingbuild.back().currdecltype != currdecltypeenum::PARAMS)  {
 		auto idtostore = callstring("getidtostor", lastvar.identifier.c_str(), lastvar.identifier.length());
 		assert(idtostore != -1);
