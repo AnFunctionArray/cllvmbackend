@@ -250,7 +250,7 @@ struct retgetnamevalue getnamevalue(const char* nametoget) {
 XS__startmatching(), XS__callout(), XS__startmodule(), boot_DynaLoader(), endmodule()
 , XS__initthread1(), waitforthread(), preparethread(), XS__startmetaregex(), dumpabrupt(),
 endmoduleabrupt(), dumpmodule(), XS__flushfilescopes1(), XS__consumefilescopes1(),
-XS__registerthread1(), XS__broadcast1(), resetbufferthr(), XS__updateavailidents1();
+XS__registerthread1(), XS__broadcast1(), resetbufferthr(), XS__updateavailidents1(), reset_state();
 
 static void
 xs_init(pTHX)
@@ -273,6 +273,7 @@ xs_init(pTHX)
 	newXS("broadcast", XS__broadcast1, __FILE__);
 	//newXS("resetbuffer", resetbufferthr, __FILE__);
 	newXS("updateavailidents", XS__updateavailidents1, __FILE__);
+	newXS("reset_state", reset_state, __FILE__);
 }
 
 PerlInterpreter* my_perl; /***    The Perl interpreter    ***/
@@ -316,27 +317,7 @@ unsigned int evalperlexpruv(const char *what) {
 	return pos;
 }
 
-void handler1(int sig) {
-	printf("signal %d @ %lu\n", sig, evalperlexpruv("pos()"));
-	//dumpabrupt();
-	//exit(0);
-	//raise(sig);
-	/*if (!initial)
-		call_argv("decnthreads", G_DISCARD | G_NOARGS, NULL);
-	else {
-		call_argv("waitforthreads", G_DISCARD | G_NOARGS, NULL);
-	}*/
-	//pthread_exit(NULL);
-	/*if(areweinuser)
-		siglongjmp(docalljmp, 1);
-	else {
-		printf("unhandled\n");
-		//exit(-1);
-		die("unhandled");
-	}*/
-
-	siglongjmp(docalljmp, 1);
-}
+void handler1(int sig);
 
 int
 callstring(caller, what, sizewhat)

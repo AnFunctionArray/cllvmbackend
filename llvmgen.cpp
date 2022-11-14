@@ -869,11 +869,13 @@ struct var : valbase {
 	}
 
 	auto requestType() {
+		fixupTypeIfNeeded();
 		return pllvmtype ? pllvmtype : 
 			pllvmtype = buildllvmtypefull(type);
 	}
 
 	std::list<::type> fixupTypeIfNeeded() {
+		if(type.empty()) return type;
 		auto& basicdeclspecarr = type.back().spec.basicdeclspec.basic;
 		if (basicdeclspecarr[0].empty() && basicdeclspecarr[1].empty() && !basicdeclspecarr[3].empty()) {
 			auto tmpident = identifier;
@@ -1673,6 +1675,8 @@ struct basehndl /* : bindings_compiling*/ {
 		ops[0] = requireint(ops[0]);
 
 		ops[0] = integralpromotions(ops[0]);
+
+		ops[1] = requireint(ops[1]);
 
 		/*if(bIsBasicFloat(ops[0].type.front())) {
 			std::list<::type> longty = { basicint };
@@ -2573,18 +2577,6 @@ checktmpagain:
 					}
 				}
 
-				auto iter = tmps.rbegin();
-				
-				for (auto i : ranges::iota_view<size_t, size_t>(0zu, id + 1)) {
-					if(iter->linkage != "typedef") {
-						iter->linkage = "extern";
-						addvar(*iter);
-					}
-					++iter;
-					//var = tmps.rbegin();
-					//goto found;
-				}
-
 				if (updated) {
 					goto checktmpagain;
 				}
@@ -2638,9 +2630,9 @@ found:
 
 	immidiate.identifier = var.value()->identifier;
 
-	immidiate.type = var.value()->type;
-
 	pglobal = immidiate.value = var.value()->requestValue();
+
+	immidiate.type = var.value()->type;
 
 	printvaltype(immidiate);
 
@@ -2758,8 +2750,6 @@ DLL_EXPORT void addescapesequencetostring(std::unordered_map<unsigned, std::stri
 	}
 
 	escape.erase(0, 2);
-
-	escape.erase(0, escape.find_first_not_of('0'));
 
 	currstring += (char)std::stoi(escape, nullptr, hashes.contains("ishex"_h) ? 0x10 : 8);
 }
@@ -2942,8 +2932,11 @@ void addvar(var& lastvar, llvm::Constant* pInitializer) {
 			std::list<::var>::reverse_iterator pfuncother;
 			lastvar.value = nullptr;
 			printtype(lastvar.requestType(), lastvar.identifier);
-			bool bmangle = hasderivatives(lastvar.identifier, lastvar.type.front());
-			std::string mangledfnname = bmangle ? lastvar.identifier + mangle(lastvar.type) : lastvar.identifier;
+			std::string tmp = lastvar.identifier;
+ 			lastvar.identifier.clear();
+ 			bool bmangle = hasderivatives(tmp, lastvar.type.front());
+ 			lastvar.identifier = tmp;
+ 			std::string mangledfnname = bmangle ? lastvar.identifier + mangle(lastvar.type) : lastvar.identifier;
 			if(mangledfnname.size() > 1 && mangledfnname.starts_with("_")) {
 				mangledfnname.erase(mangledfnname.begin());
 			}
@@ -3003,9 +2996,9 @@ DLL_EXPORT void endbuildingstructorunion() {
 
 	currtypevectorbeingbuild.pop_back();
 
-	laststruc->back().linkage = "[[completed]]";
+	laststruc->front().linkage = "[[completed]]";
 
-	if (pcurrblock.empty())  {
+	if (pcurrblock.empty() && !laststruc->front().identifier.empty())  {
 		auto fullident = laststruc->front().type.front().spec.basicdeclspec.basic[0] +  " " + laststruc->front().identifier;
 		auto idtostore = callstring("getidtostor", fullident.c_str(), fullident.length());
 		assert(idtostore != -1);
@@ -3563,10 +3556,11 @@ tryagain:
 				scope.rbegin(), scope.rend(),
 				[&](const std::list<::var>& scopevar) {
 					return scopevar.front().identifier == ident &&
-						scopevar.front().type.front().spec.basicdeclspec.basic[0] == basic.basic[0];
+						scopevar.front().type.front().spec.basicdeclspec.basic[0] == basic.basic[0]
+						 && scopevar.front().linkage == "[[completed]]";
 				});
 
-			if (iter != scope.rend() && iter->front().linkage == "[[completed]]")
+			if (iter != scope.rend())
 				return var = &*iter, true;
 		});
 
@@ -3599,6 +3593,7 @@ tryagain:
 						std::unique_lock lck{boradcastingstrc};
 						tmps.push_back(structorunionmembers_global[stringhash(fullident.c_str())][id]);
 						var = &tmps.back();
+						assert(var->front().linkage == "[[completed]]");
 						break;
 					}
 
@@ -3698,6 +3693,7 @@ llvm::Type* buildllvmtypefull(std::list<type>& refdecltypevector) {
 				auto currstruct = getstructorunion(type->spec.basicdeclspec);
 				if (!currstruct) {
 					//bincompletetype = true;
+					assert("Can't find struct");
 					goto addchar;
 				}
 				pcurrtype =
@@ -3755,6 +3751,17 @@ llvm::Type* buildllvmtypefull(std::list<type>& refdecltypevector) {
 
 	return pcurrtype;
 }
+
+
+DLL_EXPORT void reset_state() {
+	scopevar.resize(1);
+	currtypevectorbeingbuild.resize(1);
+	structorunionmembers.resize(1);
+	enums.resize(1);
+	scopevar.resize(1);
+	pcurrblock.clear();
+}
+
 
 THREAD_LOCAL extern std::list<llvm::BasicBlock*> pcurrblock;
 
@@ -4005,7 +4012,7 @@ DLL_EXPORT void startswitch() {
 	//pcurrblock.pop_back();
 	//pcurrblock.push_back(llvm::BasicBlock::Create((*llvmctx), "", dyn_cast<llvm::Function> (currfunc->pValue)));
 	auto& imm = immidiates.back();
-	imm = phndl->integralpromotions(imm);
+	imm = phndl->requireint(imm);
 	auto dummyblock = llvm::BasicBlock::Create((*llvmctx), "", dyn_cast<llvm::Function> (currfunc->requestValue()));
 	currswitch.push_back({ llvmbuilder->CreateSwitch(imm.value, dummyblock), dummyblock });
 	breakbranches.push_back({});
@@ -4276,7 +4283,7 @@ DLL_EXPORT void endqualifs(std::unordered_map<unsigned, std::string>&& hashes) {
 	if (!nontypedeflinkage.empty()) lastvar.linkage = nontypedeflinkage;
 
 	if (std::all_of(refbasic.begin(), refbasic.end(), [](const std::string& elem) {return elem.empty(); }))
-		if (lastvar.firstintroduced == nullptr) refbasic[1] = "int";
+		if (pcurrblock.empty()) refbasic[1] = "int";
 		else throw std::runtime_error{ "decl with no basic info" };
 
 	if (ranges::contains(std::array{ "struct", "union", "enum" }, refbasic[0]))
@@ -4295,8 +4302,6 @@ DLL_EXPORT void endqualifs(std::unordered_map<unsigned, std::string>&& hashes) {
 			case "enum"_h:
 				lastvar.type.back() = basicint ;
 		}
-		
-	lastvar.fixupTypeIfNeeded();
 							/*					  else
 							if (0) case "enum"_h:
 						{
@@ -4307,7 +4312,7 @@ DLL_EXPORT void endqualifs(std::unordered_map<unsigned, std::string>&& hashes) {
 	/*if (lastvar.type.front().uniontype == type::FUNCTION) {
 		lastvar.requestValue();
 	}*/
-	if (lastvar.firstintroduced == nullptr && currtypevectorbeingbuild.back().currdecltype != currdecltypeenum::STRUCTORUNION 
+	if (pcurrblock.empty() && currtypevectorbeingbuild.back().currdecltype != currdecltypeenum::STRUCTORUNION 
 		&& currtypevectorbeingbuild.back().currdecltype != currdecltypeenum::PARAMS)  {
 		auto idtostore = callstring("getidtostor", lastvar.identifier.c_str(), lastvar.identifier.length());
 		assert(idtostore != -1);
@@ -5760,17 +5765,52 @@ DLL_EXPORT void updateavailidents(HV * hash) {
 		}
 }
 
+namespace callout_namespace {
+
+	static THREAD_LOCAL char * pinstr;
+	static THREAD_LOCAL std::unordered_map<unsigned, std::string> map;
+}
+
+DLL_EXPORT void handler1(int sig) {
+	using namespace callout_namespace;
+	printf("signal %d @ %lu\n", sig, evalperlexpruv("pos()"));
+	printf("at callout %s\n", pinstr);
+	for(auto &obj : map) {
+		printf("[%s] ", obj.second.c_str());
+	}
+	printf("\n");
+	//dumpabrupt();
+	//exit(0);
+	//raise(sig);
+	/*if (!initial)
+		call_argv("decnthreads", G_DISCARD | G_NOARGS, NULL);
+	else {
+		call_argv("waitforthreads", G_DISCARD | G_NOARGS, NULL);
+	}*/
+	//pthread_exit(NULL);
+	/*if(areweinuser)
+		siglongjmp(docalljmp, 1);
+	else {
+		printf("unhandled\n");
+		//exit(-1);
+		die("unhandled");
+	}*/
+
+	siglongjmp(docalljmp, 1);
+}
+
 DLL_EXPORT U32 do_callout(SV * in, HV * hash, U32 pos)
 {
+	using namespace callout_namespace;
 	matchpos = pos;
+	map.clear();
 
-	char* key, * pinstr;
+	char* key;
 	I32 key_length;
 	STRLEN inlen;
 	SV* value;
 	hv_iterinit(hash);
 	const char nill[1] = { '\0' };
-	std::unordered_map<unsigned, std::string> map;
 	while (value = hv_iternextsv(hash, &key, &key_length)) {
 		pinstr = SvPVutf8(value, inlen);
 		if (!inlen) continue;

@@ -46,7 +46,7 @@ target_link_directories(regularc PRIVATE ${llvm_libdir})
 
 target_link_libraries(regularc PRIVATE ${llvm_libraries} -rdynamic ${PERL_LIBRARY} -lpthread range-v3 range-v3-meta range-v3::meta range-v3-concepts -lz -lcurses -ldl -lc -lzstd)
 
-target_compile_options(regularc PRIVATE -rdynamic -Ofast -g -fpermissive)
+target_compile_options(regularc PRIVATE -rdynamic -O0 -g -fpermissive)
 
 set(CMAKE_C_FLAGS -Wno-error=implicit-function-declaration)
 
