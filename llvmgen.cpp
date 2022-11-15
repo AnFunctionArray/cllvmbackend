@@ -2962,7 +2962,8 @@ void addvar(var& lastvar, llvm::Constant* pInitializer) {
 	else {
 		//default:
 		printtype(lastvar.requestType(), lastvar.identifier);
-		llvmbuilder->SetInsertPoint(lastvar.firstintroduced, lastvar.firstintroduced->begin());
+		llvmbuilder->SetInsertPoint(&dyn_cast<llvm::Function>(currfunc->value)->getBasicBlockList().front(),
+			dyn_cast<llvm::Function>(currfunc->value)->getBasicBlockList().front().begin());
 		lastvar.value = llvmbuilder->CreateAlloca(lastvar.requestType(), nullptr,
 			lastvar.identifier);
 		llvmbuilder->SetInsertPoint(pcurrblock.back());
@@ -3924,6 +3925,9 @@ DLL_EXPORT void startforloopcond() {
 }
 
 DLL_EXPORT void endforloopcond() {
+	if (immidiates.size() == 1) {
+		insertinttoimm("1", sizeof "1" - 1, "", 0, 3);
+	}
 	startifstatement();
 	endexpression();
 	//insertinttoimm("0", sizeof "0" - 1, "", 0, 3);
@@ -4204,9 +4208,14 @@ rest:
 		argsiter, ::immidiates.end(), std::back_inserter(immidiates),
 		[&](basehndl::val elem) { 
 			auto iterparamslast = iterparams++;
-			const bool decayarr = iterparamslast->type.front().uniontype == type::POINTER && elem.lvalue;
-			return !(breached = breached || iterparamslast == verylongthingy.end())
-		? convertTo(elem, iterparamslast->type, decayarr).value : floattodoubleifneeded(decay(elem, decayarr).value); });
+			breached = breached || iterparamslast == verylongthingy.end();
+			if (!breached) {
+				const bool decayarr = iterparamslast->type.front().uniontype == type::POINTER && elem.lvalue;
+				return convertTo(elem, iterparamslast->type, decayarr).value;
+			}
+			return floattodoubleifneeded(decay(elem).value);
+		}
+	);
 
 	::immidiates.erase(--argsiter, ::immidiates.end());
 
