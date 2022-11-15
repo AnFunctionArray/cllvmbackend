@@ -2,6 +2,7 @@
 //#include "llvm/IR/Instructions.h"
 //#include "llvm/IR/Value.h"
 //#include "llvm/Support/Allocator.h"
+#include "range/v3/view/reverse.hpp"
 #include "llvm/Support/raw_ostream.h"
 #ifdef _WIN32
 #ifdef NDEBUG
@@ -113,6 +114,8 @@ auto splicethings = [] (auto &reflist, auto &refsrc) {
 };
 
 THREAD_LOCAL static std::unordered_map<std::string, unsigned> id2dmap;
+
+static bool allowccompat = true;
 
 static bool pop_obtainvalbyidentifier_last();
 
@@ -942,6 +945,8 @@ val convertTo(val target, std::list<::type> to, bool bdecay=true);
 
 THREAD_LOCAL static std::list<val> immidiates{ 1 };
 
+THREAD_LOCAL std::list<val> &immidiates_{ immidiates };
+
 bool bIsBasicInteger(const type& type);
 
 using ifstatiter = std::list<std::pair<std::array<llvm::BranchInst*, 2>, llvm::BasicBlock*>>::iterator;
@@ -1279,35 +1284,35 @@ struct basehndl /* : bindings_compiling*/ {
 				in = convertTo(in, { basicsz });
 			}
 		}
-#if 0
-		assert(in.type.size() == 1);
+		if (allowccompat) {
+			assert(in.type.size() == 1);
 
-		std::cout << "promoting" << std::endl;
+			std::cout << "promoting" << std::endl;
 
-		extern void printvaltype(val);
+			extern void printvaltype(val);
 
-		printvaltype(in);
+			printvaltype(in);
 
-		switch (
-			stringhash(in.type.back().spec.basicdeclspec.basic[1].c_str())) {
-		case "char"_h:
-		case "short"_h:
-			switch (stringhash(
-				in.type.back().spec.basicdeclspec.basic[0].c_str())) {
-			default:
-			case "signed"_h:
-				in.value =
-					CreateCastInst(in.value, getInt32Ty((*llvmctx)), true);
-				break;
-			case "unsigned"_h:
-				in.value =
-					CreateCastInst(in.value, getInt32Ty((*llvmctx)), false);
-				break;
+			switch (
+				stringhash(in.type.back().spec.basicdeclspec.basic[1].c_str())) {
+			case "char"_h:
+			case "short"_h:
+				switch (stringhash(
+					in.type.back().spec.basicdeclspec.basic[0].c_str())) {
+				default:
+				case "signed"_h:
+					in.value =
+						CreateCastInst(in.value, getInt32Ty((*llvmctx)), true);
+					break;
+				case "unsigned"_h:
+					in.value =
+						CreateCastInst(in.value, getInt32Ty((*llvmctx)), false);
+					break;
+				}
+				in.type.back().spec.basicdeclspec.basic[0] = "";
+				in.type.back().spec.basicdeclspec.basic[1] = "int";
 			}
-			in.type.back().spec.basicdeclspec.basic[0] = "";
-			in.type.back().spec.basicdeclspec.basic[1] = "int";
 		}
-#endif
 		return in;
 	}
 
@@ -2623,6 +2628,8 @@ checktmpagain:
 found:
 	if (!push) return var;
 
+	assert(var.has_value());
+
 	val immidiate;
 
 
@@ -2656,33 +2663,35 @@ DLL_EXPORT void begin_initializer(std::unordered_map<unsigned, std::string>& has
 THREAD_LOCAL static llvm::SmallVector<llvm::Constant*> constantimmidiates;
 
 DLL_EXPORT void finalize_initializer(std::unordered_map<unsigned, std::string>& hashes) {
-	if (currtypevectorbeingbuild.back().p->back().type.front().uniontype == type::ARRAY) {
+	auto &lastvar = currtypevectorbeingbuild.back().p->back();
+	if (lastvar.type.front().uniontype == type::ARRAY) {
 		if (scopevar.size() > 1) {
-			auto iterimm = ++immidiates.begin();
-			for (auto i : ranges::iota_view<size_t, size_t>(0zu, immidiates.size() - 1)) {
-				immidiates.push_back(val{ currtypevectorbeingbuild.back().p->back() });
+			for (auto i : ranges::reverse_view(ranges::iota_view<size_t, size_t>(0zu, immidiates.size() - 1))) {
+				obtainvalbyidentifier(lastvar.identifier);
 				insertinttoimm(std::to_string(i).c_str(), std::to_string(i).length(), "ul", sizeof "ul" - 1, 3);
 				phndl->subscripttwovalues();
-				immidiates.push_back(*iterimm++);
+				std::swap(immidiates.back(), *----immidiates.end());
 				phndl->assigntwovalues();
+				immidiates.pop_back();
 			}
 		}
 		else {
-			currtypevectorbeingbuild.back().p->back().type.front().spec.array.nelems = constantimmidiates.size();
+			lastvar.type.front().spec.array.nelems = constantimmidiates.size();
 
-			addvar(currtypevectorbeingbuild.back().p->back(),
+			addvar(lastvar,
 				llvm::ConstantArray::get(dyn_cast<llvm::ArrayType>
-					(currtypevectorbeingbuild.back().p->back().requestType()), constantimmidiates));
+					(lastvar.requestType()), constantimmidiates));
 		}
 	}
 	else {
 		if (scopevar.size() > 1) {
-			immidiates.push_back(val{ currtypevectorbeingbuild.back().p->back() });
-			immidiates.push_back(immidiates.back());
+			obtainvalbyidentifier(lastvar.identifier);
+			std::swap(immidiates.back(), *----immidiates.end());
 			phndl->assigntwovalues();
+			immidiates.pop_back();
 		}
 		else {
-			addvar(currtypevectorbeingbuild.back().p->back(),
+			addvar(lastvar,
 				constantimmidiates[0]);
 		}
 	}
@@ -2690,18 +2699,14 @@ DLL_EXPORT void finalize_initializer(std::unordered_map<unsigned, std::string>& 
 	if (scopevar.size() == 1)
 		endconstantexpr();
 
-	immidiates.clear();
-
 	constantimmidiates.clear();
 }
 
 DLL_EXPORT void extract() {
-	std::list<::type> to = currtypevectorbeingbuild.back().p->back().type;
-
-	to.pop_front();
+	auto &lastvar = currtypevectorbeingbuild.back().p->back();
 
 	if (scopevar.size() == 1) {
-		constantimmidiates.push_back(dyn_cast<llvm::Constant>(convertTo(::immidiates.back(), to).value));
+		constantimmidiates.push_back(dyn_cast<llvm::Constant>(::immidiates.back().value));
 		::immidiates.pop_back();
 	}
 }
@@ -3855,7 +3860,7 @@ DLL_EXPORT void endscope() {
 	dyn_cast<llvm::Function>(currfunc->value)->eraseFromParent();*/
 }
 
-DLL_EXPORT void endexpression() { phndl->immidiates.clear(); }
+DLL_EXPORT void endexpression() { phndl->immidiates.resize(1); }
 
 THREAD_LOCAL std::list<llvm::BasicBlock*> dowhileloops;
 
@@ -4071,8 +4076,8 @@ DLL_EXPORT void addDefaultCase() {
 }*/
 
 llvm::Value* floattodoubleifneeded(llvm::Value* possiblefloat) {
-	/*if (possiblefloat->getType()->isFloatTy())
-		return llvmbuilder->CreateFPCast(possiblefloat, llvm::Type::getFloatingPointTy((*llvmctx), llvm::APFloatBase::IEEEdouble()));*/
+	if (possiblefloat->getType()->isFloatTy() && allowccompat)
+		return llvmbuilder->CreateFPCast(possiblefloat, llvm::Type::getFloatingPointTy((*llvmctx), llvm::APFloatBase::IEEEdouble()));
 	return possiblefloat;
 }
 
@@ -4131,8 +4136,8 @@ DLL_EXPORT void endfunctioncall() {
 			
 			for (auto& params : funccand.first->type.front().spec.func.parametertypes_list.front()) {
 				if (::immidiates.end() == argsiterarg) break;
-
-				auto argval = params.type.front().uniontype == type::ARRAY ? *argsiterarg : decay(*argsiterarg);
+				const bool decayarr = params.type.front().uniontype == type::POINTER && argsiterarg->lvalue;
+				auto argval = decay(*argsiterarg, decayarr);
 				if (params.type.front().uniontype != argval.type.front().uniontype) {
 					funccand.second += 2;
 				}
@@ -4199,9 +4204,9 @@ rest:
 		argsiter, ::immidiates.end(), std::back_inserter(immidiates),
 		[&](basehndl::val elem) { 
 			auto iterparamslast = iterparams++;
+			const bool decayarr = iterparamslast->type.front().uniontype == type::POINTER && elem.lvalue;
 			return !(breached = breached || iterparamslast == verylongthingy.end())
-		? convertTo(elem, iterparamslast->type, iterparamslast->type.front().uniontype == type::POINTER
-		&& elem.lvalue).value : floattodoubleifneeded(decay(elem).value); });
+		? convertTo(elem, iterparamslast->type, decayarr).value : floattodoubleifneeded(decay(elem, decayarr).value); });
 
 	::immidiates.erase(--argsiter, ::immidiates.end());
 
@@ -4468,6 +4473,10 @@ void llvminit_thread();
 
 
 DLL_EXPORT void llvminit() {
+	if(getenv("SILENT"))
+		std::cout.rdbuf(NULL);
+	if(getenv("INTPROM"))
+		allowccompat = atoi(getenv("INTPROM"));
 	//llvminit_thread();
 }
 
@@ -4604,9 +4613,6 @@ DLL_EXPORT void startmodule(const char* modulename, size_t szmodulename) {
 
 	(*llvmctx).setOpaquePointers(true);
 	mainmodule->setDataLayout(*pdatalayout);
-
-	if(getenv("SILENT"))
-		std::cout.rdbuf(NULL);
 
 	/*if (const char* preplaypath = getenv("REPLAY")) {
 		std::ifstream replay{ preplaypath, std::ifstream::binary };
