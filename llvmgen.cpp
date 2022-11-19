@@ -892,8 +892,10 @@ struct var : valbase {
 	}
 	llvm::Value* requestValue() {
 		if ((value == nullptr)
-			&& linkage != "typedef")
+			&& linkage != "typedef") {
+			fixupTypeIfNeeded();
 			addvar(*this);
+		}
 		return value;
 	}
 	std::string linkage;
@@ -2856,27 +2858,23 @@ static std::string mangle(std::list<::type> type) {
 
 static bool comparefunctiontypeparameters(::type fntypeone, ::type fntypetwo);
 
-static bool hasderivatives(std::string ident, ::type tocompare) {
+static ::var *reqeustInitialFn(std::string ident) {
 
-	std::list<::var>::reverse_iterator iter;
+	std::optional<std::list<::var>::reverse_iterator> iter;
 
-	static THREAD_LOCAL std::unordered_set<std::string> fastmap;
+	static THREAD_LOCAL std::unordered_map<std::string, ::var*> fastmap;
 
-	if(fastmap.contains(ident)) return true;
+	if(fastmap.contains(ident)) return fastmap[ident];
 
 	while(auto val = obtainvalbyidentifier(ident, false, false, true)) {
 		//if (iter->value)
 
 		iter = val.value();
-		if (!comparefunctiontypeparameters(iter->type.front(), tocompare)) {
-			reset_obtainvalbyidentifier_search();
-			fastmap.insert(ident);
-			return true;
-		}
 	}
 
 	reset_obtainvalbyidentifier_search();
-	return false;
+
+	return fastmap[ident] = iter ? &*iter.value() : nullptr;
 }
 
 bool comparetwotypesdeep(std::list<::type> first, std::list<::type> second);
@@ -2885,7 +2883,7 @@ static bool comparefunctiontypeparameters(::type fntypeone, ::type fntypetwo) {
 	auto& paramslistone = fntypeone.spec.func.parametertypes_list.front(),
 		& paramslisttwo = fntypetwo.spec.func.parametertypes_list.front();
 
-	auto iterparamsone = paramslistone.begin(), iterparamstwo = paramslisttwo.begin();
+	auto iterparamsone = ++paramslistone.begin(), iterparamstwo = ++paramslisttwo.begin();
 
 	while (iterparamsone != paramslistone.end() && iterparamstwo != paramslisttwo.end()
 		&& comparetwotypesdeep(iterparamsone->type, iterparamstwo->type))
@@ -2934,19 +2932,18 @@ void addvar(var& lastvar, llvm::Constant* pInitializer) {
 			// scopevar.front ().push_back (lastvar);
 			break;
 		case type::FUNCTION:
-			std::list<::var>::reverse_iterator pfuncother;
-			lastvar.value = nullptr;
 			printtype(lastvar.requestType(), lastvar.identifier);
-			std::string tmp = lastvar.identifier;
- 			lastvar.identifier.clear();
- 			bool bmangle = hasderivatives(tmp, lastvar.type.front());
- 			lastvar.identifier = tmp;
- 			std::string mangledfnname = bmangle ? lastvar.identifier + mangle(lastvar.type) : lastvar.identifier;
+			auto initialfn = reqeustInitialFn(lastvar.identifier);
+ 			std::string mangledfnname = initialfn && (initialfn->fixupTypeIfNeeded(), true) && !comparefunctiontypeparameters(lastvar.type.front(), initialfn->type.front()) 
+				? lastvar.identifier + mangle(lastvar.type) : lastvar.identifier;
 			if(mangledfnname.size() > 1 && mangledfnname.starts_with("_")) {
 				mangledfnname.erase(mangledfnname.begin());
 			}
-			lastvar.value = mainmodule->getFunction(mangledfnname);
-			if (!lastvar.value) {
+
+			if (auto funcval = mainmodule->getFunction(mangledfnname)) {
+				lastvar.value = funcval;
+			}
+			else {
 				lastvar.value = llvm::Function::Create(
 					llvm::dyn_cast<llvm::FunctionType> (lastvar.requestType()),
 					linkagetype, mangledfnname, *mainmodule
@@ -2955,7 +2952,9 @@ void addvar(var& lastvar, llvm::Constant* pInitializer) {
 					dyn_cast<llvm::Function>(lastvar.value)->setCallingConv(llvm::CallingConv::X86_StdCall);
 				}
 			}
+			assert(lastvar.value);
 			// scopevar.front ().push_back (lastvar);
+
 			break;
 		}
 	}	//break;
@@ -3782,7 +3781,7 @@ DLL_EXPORT void beginscope() {
 	if (beginofafnuc) {
 		std::cout << "begin func at @" << &scopevar << std::endl;
 		var current_arg;
-		currfunc = --scopevar.back().end();
+		currfunc = --currtypevectorbeingbuild.back().p->end();
 		auto currfuncval = currfunc->requestValue();
 		auto iter_params = currfunc->type.front()
 			.spec.func.parametertypes_list.front()
