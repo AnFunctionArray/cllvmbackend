@@ -64,7 +64,8 @@ extern "C" void __cdecl _wassert2(
 #include <locale>
 #include <ostream>
 #include <queue>
-/*#include <range/v3/algorithm/contains.hpp>
+#ifndef __cpp_lib_ranges
+#include <range/v3/algorithm/contains.hpp>
 #include <range/v3/algorithm/find.hpp>
 #include <range/v3/iterator/common_iterator.hpp>
 #include <range/v3/iterator/concepts.hpp>
@@ -74,7 +75,11 @@ extern "C" void __cdecl _wassert2(
 #include <range/v3/view.hpp>
 #include <range/v3/view/drop.hpp>
 #include <range/v3/view/iota.hpp>
-#include <range/v3/view/istream.hpp>*/
+#include <range/v3/view/istream.hpp>
+#define _Ranges ranges
+#else
+#define _Ranges std::ranges
+#endif
 #include <ranges>
 #include <sstream>
 #include <stdexcept>
@@ -600,7 +605,7 @@ struct bascitypespec : basic_type_origin {
 	}
 
 	/*bool hasLinkage() {
-		return std::ranges::contains(std::array{ "extern", "static" }, basic[2]);
+		return _Ranges::contains(std::array{ "extern", "static" }, basic[2]);
 	}*/
 
 	bool operator== (const bascitypespec& comparer) {
@@ -615,8 +620,8 @@ struct bascitypespec : basic_type_origin {
 	}
 
 	bool compareSign(const bascitypespec& comparer) {
-		return std::ranges::contains(std::array{ "", "signed" }, comparer.basic[0]) &&
-			std::ranges::contains(std::array{ "", "signed" }, basic[0]) ||
+		return _Ranges::contains(std::array{ "", "signed" }, comparer.basic[0]) &&
+			_Ranges::contains(std::array{ "", "signed" }, basic[0]) ||
 			comparer.basic[0] == basic[0];
 	}
 };
@@ -1131,7 +1136,7 @@ struct basehndl /* : bindings_compiling*/ {
 
 		//auto iternbranch = nbranches.begin();
 
-		/*for (auto branch : nbranches.back().first | std::ranges::views::drop(1)) {
+		/*for (auto branch : nbranches.back().first | _Ranges::views::drop(1)) {
 			//iternbranch = ++iternbranch;
 			int fullindex = branch->first[0]->getSuccessor(1) != branch->second;
 			branch->first[0]->setSuccessor(!fullindex, pcurrblock.back());
@@ -1394,7 +1399,7 @@ struct basehndl /* : bindings_compiling*/ {
 				listtp.back().spec.basicdeclspec.longspecsn = 1,
 				ops[i]->type.size() > 1)
 				ops_in[i] = convertTo(*ops[!i], listtp);
-			else if (std::ranges::contains(std::array{ "double", "float" }, refspecops[i]->basic[1])) {
+			else if (_Ranges::contains(std::array{ "double", "float" }, refspecops[i]->basic[1])) {
 				if(refspecops[!i]->basic[1] == "double") {
 					ops_in[i] = convertTo(*ops[i], ops[!i]->type);
 					return ops_in;
@@ -1455,7 +1460,7 @@ struct basehndl /* : bindings_compiling*/ {
 			for (auto i = 0; i < 2; ++i) {
 				switch (y)
 		case 0:
-			if (std::ranges::contains(std::array{ "double", "float" }, ops[i].type.back().spec.basicdeclspec.basic[1]))
+			if (_Ranges::contains(std::array{ "double", "float" }, ops[i].type.back().spec.basicdeclspec.basic[1]))
 				for (ops[!i] = convertTo(ops[!i], ops[i].type);;)
 					return ops;
 			else default:
@@ -2596,7 +2601,7 @@ checktmpagain:
 				//std::unique_lock lck{all};
 				{
 					std::unique_lock lck{boradcastingscope};
-					for (auto i : std::ranges::iota_view<size_t, size_t>(0zu, id + 1)) {
+					for (auto i : _Ranges::iota_view<size_t, size_t>(0zu, id + 1)) {
 						tmps.push_back(scopevars_global[stringhash(ident.c_str())][i]);
 						updated = true;
 						//var = tmps.rbegin();
@@ -2629,10 +2634,10 @@ checktmpagain:
 		newvar.type = newvar.type = { fntype, basicint };
 		newvar.firstintroduced = nullptr;
 		newvar.ispotentiallywrong = true;
-		addvar(newvar);
 		scopevar.begin()->push_back(newvar);
 
 		var = scopevar.begin()->rbegin();
+		addvar(**var);
 
 		/*if (push) {
 			phndl->immidiates.push_back(::val{newvar});
@@ -2688,7 +2693,7 @@ DLL_EXPORT void finalize_initializer(std::unordered_map<unsigned, std::string>& 
 	auto &lastvar = currtypevectorbeingbuild.back().p->back();
 	if (lastvar.type.front().uniontype == type::ARRAY) {
 		if (scopevar.size() > 1) {
-			for (auto i : std::ranges::reverse_view(std::ranges::iota_view<size_t, size_t>(0zu, immidiates.size() - 1))) {
+			for (auto i : _Ranges::reverse_view(_Ranges::iota_view<size_t, size_t>(0zu, immidiates.size() - 1))) {
 				obtainvalbyidentifier(lastvar.identifier);
 				insertinttoimm(std::to_string(i).c_str(), std::to_string(i).length(), "ul", sizeof "ul" - 1, 3);
 				phndl->subscripttwovalues();
@@ -2894,7 +2899,7 @@ static ::var *reqeustInitialFn(std::string ident) {
 
 	reset_obtainvalbyidentifier_search();
 
-	return fastmap[ident] = iter ? &*iter.value() : nullptr;
+	return fastmap[ident] = &*iter.value();
 }
 
 bool comparetwotypesdeep(std::list<::type> first, std::list<::type> second);
@@ -2903,7 +2908,7 @@ static bool comparefunctiontypeparameters(::type fntypeone, ::type fntypetwo) {
 	auto& paramslistone = fntypeone.spec.func.parametertypes_list.front(),
 		& paramslisttwo = fntypetwo.spec.func.parametertypes_list.front();
 
-	auto iterparamsone = ++paramslistone.begin(), iterparamstwo = ++paramslisttwo.begin();
+	auto iterparamsone = paramslistone.begin(), iterparamstwo = paramslisttwo.begin();
 
 	while (iterparamsone != paramslistone.end() && iterparamstwo != paramslisttwo.end()
 		&& comparetwotypesdeep(iterparamsone->type, iterparamstwo->type))
@@ -3008,7 +3013,7 @@ DLL_EXPORT void check_stray_struc() {
 
 DLL_EXPORT void endbuildingstructorunion() {
 
-	//for (auto& a : lastmembers | std::ranges::views::drop(1))
+	//for (auto& a : lastmembers | _Ranges::views::drop(1))
 		//a.pllvmtype = buildllvmtypefull(a.type);
 
 	/*std::vector<llvm::Type*> structtypes;
@@ -3100,12 +3105,12 @@ bool bIsBasicInteger(const type& type) {
 	std::set integertraits{ "unsigned", "signed", "" };
 	return type.uniontype == type::BASIC
 		&& !type.spec.basicdeclspec.basic[1].empty()
-		&& std::ranges::find(integertraits, type.spec.basicdeclspec.basic[0]) != integertraits.end() && !bIsBasicFloat(type);
+		&& _Ranges::find(integertraits, type.spec.basicdeclspec.basic[0]) != integertraits.end() && !bIsBasicFloat(type);
 }
 
 bool bIsBasicFloat(const type& type) {
 	return type.uniontype == type::BASIC
-		&& std::ranges::contains(std::array{ "float", "double" }, type.spec.basicdeclspec.basic[1]);
+		&& _Ranges::contains(std::array{ "float", "double" }, type.spec.basicdeclspec.basic[1]);
 }
 
 bool comparetwotypesdeep(std::list<::type> first, std::list<::type> second) {
@@ -3547,7 +3552,7 @@ void fixupstructype(std::list<::var>* var) {
 
 	var->front().pllvmtype = llvm::StructType::create((*llvmctx));
 
-	for (auto& a : *var | std::ranges::views::drop(1))
+	for (auto& a : *var | _Ranges::views::drop(1))
 		if (!a.pllvmtype)
 			a.pllvmtype = (llvm::Type*)-1ULL,
 			tmp.push_back(buildllvmtypefull(a.type));
@@ -3760,7 +3765,7 @@ llvm::Type* buildllvmtypefull(std::list<type>& refdecltypevector) {
 		for (auto typeiter =
 			std::make_reverse_iterator(++std::find_if(refdecltypevector.begin(), refdecltypevector.end(),
 				[&](::type& type) {
-					return std::ranges::contains(std::array{ ::type::BASIC, ::type::POINTER }, type.uniontype);
+					return _Ranges::contains(std::array{ ::type::BASIC, ::type::POINTER }, type.uniontype);
 				})); typeiter != refdecltypevector.rend(); ++typeiter) {
 			if ((typeiter->cachedtype, false) || (!lambdas[typeiter->uniontype](typeiter), false))
 				pcurrtype = typeiter->cachedtype;
@@ -3799,9 +3804,9 @@ llvm::BranchInst* splitbb(const char* identifier, size_t szident);
 DLL_EXPORT void beginscope() {
 	bool beginofafnuc = scopevar.size() == 1;
 	if (beginofafnuc) {
-		std::cout << "begin func at @" << &scopevar << std::endl;
-		var current_arg;
 		currfunc = --currtypevectorbeingbuild.back().p->end();
+		std::cout << "begin func at @" << currfunc->identifier << std::endl;
+		var current_arg;
 		auto currfuncval = currfunc->requestValue();
 		auto iter_params = currfunc->type.front()
 			.spec.func.parametertypes_list.front()
@@ -4056,7 +4061,7 @@ bool bareweinabrupt(bool barewe) {
 	if (pcurrblock.size())
 		if (pcurrblock.back()->getInstList().size()) {
 			auto lastinstropcode = pcurrblock.back()->back().getOpcode();
-			return std::ranges::contains(std::array{ llvm::Instruction::Br, llvm::Instruction::Switch,llvm::Instruction::Ret }, lastinstropcode);
+			return _Ranges::contains(std::array{ llvm::Instruction::Br, llvm::Instruction::Switch,llvm::Instruction::Ret }, lastinstropcode);
 		}
 		else
 			return false;
@@ -4319,7 +4324,7 @@ DLL_EXPORT void endqualifs(std::unordered_map<unsigned, std::string>&& hashes) {
 		if (pcurrblock.empty()) refbasic[1] = "int";
 		else throw std::runtime_error{ "decl with no basic info" };
 
-	if (std::ranges::contains(std::array{ "struct", "union", "enum" }, refbasic[0]))
+	if (_Ranges::contains(std::array{ "struct", "union", "enum" }, refbasic[0]))
 		switch (stringhash(refbasic[0].c_str())) if (0);
 		else if(0) {
 			case "struct"_h:
@@ -4565,7 +4570,7 @@ DLL_EXPORT void flushfilescopes(unsigned n, unsigned id) {
 	static bool storedscopevar = false;
 	static bool storedsstructs = false;
 	static bool storedsenums = false;
-	for (auto i : std::ranges::iota_view<unsigned, unsigned>(0u, n)) {
+	for (auto i : _Ranges::iota_view<unsigned, unsigned>(0u, n)) {
 		syncf.lock();
 		consumablescopevars.push_back({id, {storedscopevar ? ++consumablescopevarstopushlast : scopevar.front().begin(), scopevar.front().end()}});
 		consumablestructorunionmembers.push_back({id, {storedsstructs ? ++structorunionmemberstopushlast : structorunionmembers.front().begin(), structorunionmembers.front().end()}});
@@ -5612,9 +5617,9 @@ rest:
 
 	const llvm::fltSemantics& floatsem = postfix.empty() ? currtype.back().spec.basicdeclspec.basic[1] = "double",
 		pllvmtype = llvm::Type::getDoubleTy((*llvmctx)),
-		llvm::APFloatBase::IEEEdouble() : std::ranges::contains(std::array{ "f", "F" }, postfix) ? currtype.back().spec.basicdeclspec.basic[1] = "float",
+		llvm::APFloatBase::IEEEdouble() : _Ranges::contains(std::array{ "f", "F" }, postfix) ? currtype.back().spec.basicdeclspec.basic[1] = "float",
 		pllvmtype = llvm::Type::getFloatTy((*llvmctx)),
-		llvm::APFloatBase::IEEEsingle() : (assert(std::ranges::contains(std::array{ "l", "L" }, postfix)),
+		llvm::APFloatBase::IEEEsingle() : (assert(_Ranges::contains(std::array{ "l", "L" }, postfix)),
 		 currtype.back().spec.basicdeclspec.basic[1] = "double", currtype.back().spec.basicdeclspec.longspecsn = 1,
 		  pllvmtype = llvm::Type::getPPC_FP128Ty((*llvmctx)), llvm::APFloatBase::PPCDoubleDouble());
 
