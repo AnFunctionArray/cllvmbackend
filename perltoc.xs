@@ -76,7 +76,7 @@ void
 initthread1(U32 baseposarg)
 CODE:
     {
-        extern __thread U32 matchpos, basepos;
+        extern THREAD_LOCAL_C U32 matchpos, basepos;
         //printf("print digit %d\n", baseposarg);
 	    basepos = baseposarg;
 	    initthread();

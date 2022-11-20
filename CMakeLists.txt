@@ -30,8 +30,6 @@ if(NOT PERLLIBS_FOUND)
     message(WARNING "Missing perl libraries")
 endif()
 
-find_package(range-v3 CONFIG REQUIRED)
-
 if(llvm_libraries STREQUAL "")
     message(WARNING "Missing valid LLVM_CONFIG")
 endif()
@@ -44,7 +42,7 @@ string(STRIP ${llvm_libdir} llvm_libdir)
 
 target_link_directories(regularc PRIVATE ${llvm_libdir})
 
-target_link_libraries(regularc PRIVATE ${llvm_libraries} -rdynamic ${PERL_LIBRARY} -lpthread range-v3 range-v3-meta range-v3::meta range-v3-concepts -lz -lcurses -ldl -lc -lzstd)
+target_link_libraries(regularc PRIVATE ${llvm_libraries} -rdynamic ${PERL_LIBRARY} -lpthread -lz -lcurses -ldl -lc -lzstd)
 
 target_compile_options(regularc PRIVATE -rdynamic -O0 -g -fpermissive)
 

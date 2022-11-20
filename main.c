@@ -6,7 +6,8 @@
 #define NDEBUGSTATE
 #endif
 #include <setjmp.h>
-extern __thread jmp_buf docalljmp;
+#include "main.h"
+extern THREAD_LOCAL_C jmp_buf docalljmp;
 
 #if !defined(_WIN32) & !defined(_WIN64)
 //#include <pcre2.h>
@@ -261,7 +262,7 @@ xs_init(pTHX)
 	newXS("callout", XS__callout, __FILE__);
 	//newXS("startmetaregex", XS__startmetaregex, __FILE__);
 	newXS("endmodule", endmodule, __FILE__);
-	newXS("endmoduleabrupt", endmoduleabrupt, __FILE__);
+	//newXS("endmoduleabrupt", endmoduleabrupt, __FILE__);
 	newXS("initthread", XS__initthread1, __FILE__);
 	newXS("dumpmodule", dumpmodule, __FILE__);
 	//newXS("preparethread", preparethread, __FILE__);
@@ -300,15 +301,17 @@ secondmain(char* subject, size_t szsubject, char* pattern, size_t szpattern, cha
 	onig_search(preg, subject, subject + szsubject, subject, subject + szsubject, 0, 0);
 }
 #endif
+#ifndef _WIN32
 #include <pthread.h>
+#endif
 #include <signal.h>
 //#include <unistd.h>
 
-__thread U32 matchpos, basepos;
+THREAD_LOCAL_C U32 matchpos, basepos;
 
-__thread int initial;
+THREAD_LOCAL_C int initial;
 
-__thread int areweinuser;
+THREAD_LOCAL_C int areweinuser;
 
 unsigned int evalperlexpruv(const char *what) {
 	SV *currpos = eval_pv(what, FALSE);
@@ -388,11 +391,12 @@ int var;
 #endif
 
 int handler2(int reportType, char* message, int* returnValue) {
-	if (returnValue)
+	/*if (returnValue)
 		*returnValue = TRUE;
 	printf("%s\n", message);
 	dumpabrupt();
-	exit(0);
+	exit(0);*/
+	handler1(reportType);
 }
 #ifdef _WIN32
 WINBASEAPI
@@ -409,9 +413,10 @@ VectoredHandler1(
 	struct _EXCEPTION_POINTERS* ExceptionInfo
 )
 {
-	dumpabrupt();
+	handler1(ExceptionInfo->ExceptionRecord->ExceptionCode);
+	/*dumpabrupt();
 
-	return EXCEPTION_EXECUTE_HANDLER;
+	return EXCEPTION_EXECUTE_HANDLER;*/
 }
 #endif
 int main(int argc, char** argv, char** env)
@@ -432,13 +437,15 @@ int main(int argc, char** argv, char** env)
 		wcstombs(tmp = malloc(0xFFF), curr, 0xFFF), *pcurr++ = tmp;
 #endif
 	//onig_initialize();
+#ifndef _WIN32
 	signal(SIGTERM, handler1);
 	signal(SIGABRT, handler1);
 	signal(SIGSEGV, handler1);
-#if _WIN32 && defined(NDEBUGSTATE)
+#endif
+/*#if defined(_WIN32) && defined(NDEBUGSTATE)
 	_CrtSetReportHook(handler2);
 	AddVectoredExceptionHandler(1, VectoredHandler1);
-#endif
+#endif*/
 	if(getenv("THREADING")) {
 		void *wait_for_call(void*);
 		//pthread_create(&thread, 0, wait_for_call, 0);
@@ -467,7 +474,8 @@ int main(int argc, char** argv, char** env)
 }
 
 #ifdef _WIN32
-
+THREAD_LOCAL_C jmp_buf docalljmp;
+THREAD_LOCAL_C bool binabrupt;
 HANDLE hCurrModule;
 
 void docall(const char *name, size_t szname, void *phashmap) {
@@ -482,22 +490,24 @@ void docall(const char *name, size_t szname, void *phashmap) {
 	extern void global_han();
 
 	global_han(cProcName, phashmap);
+#ifdef NDEBUG
+	EXCEPTION_POINTERS* pexc;
 
-	//EXCEPTION_POINTERS* pexc;
-
-	//__try {
-
+	__try {
+#endif
 		((void (*)(void* phashmap))pfunc)(phashmap);
-	//}
-	//__except (pexc=GetExceptionInformation(), EXCEPTION_EXECUTE_HANDLER) {
-	//	__debugbreak();
-	//}
+#ifdef NDEBUG
+	}
+	__except (pexc = GetExceptionInformation(), EXCEPTION_EXECUTE_HANDLER) {
+		handler1(pexc->ExceptionRecord->ExceptionCode);
+	}
+#endif
 }
 #else
 #include <dlfcn.h>
 #include <setjmp.h>
-__thread jmp_buf docalljmp;
-__thread bool binabrupt;
+THREAD_LOCAL_C jmp_buf docalljmp;
+THREAD_LOCAL_C bool binabrupt;
 U32 docall(const char *name, size_t szname, void *phashmap) {
 	char cProcName[USHRT_MAX];
 	sprintf(cProcName, "%.*s", (int)szname, name);
