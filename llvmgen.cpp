@@ -916,9 +916,9 @@ struct var : valbase {
 		return type;
 	}
 	llvm::Value* requestValue() {
+		fixupTypeIfNeeded();
 		if ((value == nullptr)
 			&& linkage != "typedef") {
-			fixupTypeIfNeeded();
 			addvar(*this);
 		}
 		return value;
@@ -3550,7 +3550,20 @@ void fixupstructype(std::list<::var>* var) {
 		return;
 	}
 
-	var->front().pllvmtype = llvm::StructType::create((*llvmctx));
+	auto structtypes = mainmodule->getIdentifiedStructTypes();
+
+	auto foundstruc = std::find_if(structtypes.begin(), structtypes.end(), [&](llvm::StructType *pstructype) {
+		return pstructype->getStructName() == var->front().identifier;
+	});
+
+	if(foundstruc != structtypes.end()) {
+
+		var->front().pllvmtype = *foundstruc;
+		if(!(*foundstruc)->isOpaque()) return;
+	}
+	else {
+		var->front().pllvmtype = llvm::StructType::create((*llvmctx), var->front().identifier);
+	}
 
 	for (auto& a : *var | _Ranges::views::drop(1))
 		if (!a.pllvmtype)
