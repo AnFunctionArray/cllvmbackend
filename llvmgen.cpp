@@ -4,6 +4,7 @@
 //#include "llvm/Support/Allocator.h"
 //#include "range/v3/view/reverse.hpp"
 
+#include "range/v3/view/reverse.hpp"
 #ifdef _WIN32
 #define _WSPIAPI_H_
 #ifdef NDEBUG
@@ -2555,6 +2556,7 @@ tryagain:
 	}
 
 	if(!iterscope_has_started || !bcontinue) {
+checktmpagain:
 		iterscope_has_started = bcontinue;
 		iterscope = scopevar.rbegin();
 		itervar = iterscope->rbegin();
@@ -2567,23 +2569,6 @@ tryagain:
 				++itervar;
 				goto found;
 			}
-		}
-	}
-
-
-
-	if(!itervar_tmps_has_started || !bcontinue) {
-checktmpagain:
-		itervar_tmps_has_started = bcontinue;
-		itervar_tmps = tmps.rbegin();
-	}
-
-	for (; itervar_tmps != tmps.rend(); ++itervar_tmps) {
-		if (itervar_tmps->identifier == ident && (bfindtypedef == (itervar_tmps->linkage == "typedef"))) {
-			var = itervar_tmps;
-			++itervar_tmps;
-			itervar_tmps_has_extenral_could_not_be_checked = bcontinue;
-			goto found;
 		}
 	}
 
@@ -2601,17 +2586,24 @@ checktmpagain:
 				//std::unique_lock lck{all};
 				{
 					std::unique_lock lck{boradcastingscope};
-					for (auto i : _Ranges::iota_view<size_t, size_t>(0zu, id + 1)) {
-						tmps.push_back(scopevars_global[stringhash(ident.c_str())][i]);
-						updated = true;
+
+					assert(scopevars_global[stringhash(ident.c_str())].contains(id));
+
+					scopevar.front().push_front(scopevars_global[stringhash(ident.c_str())][id]);
+					var = --scopevar.front().rend();
+					for (auto i :_Ranges::reverse_view(_Ranges::iota_view<size_t, size_t>(0zu, id))) {
+						scopevar.front().push_front(scopevars_global[stringhash(ident.c_str())][i]);
+						//updated = true;
 						//var = tmps.rbegin();
 						//goto found;
 					}
+
+					goto found;
 				}
 
-				if (updated) {
-					goto checktmpagain;
-				}
+				//if (updated) {
+					//goto checktmpagain;
+				//}
 
 				throw std::logic_error {"unreachable " + ident};
 			}
@@ -3029,7 +3021,7 @@ DLL_EXPORT void endbuildingstructorunion() {
 	laststruc->front().linkage = "[[completed]]";
 
 	if (pcurrblock.empty() && !laststruc->front().identifier.empty())  {
-		auto fullident = laststruc->front().type.front().spec.basicdeclspec.basic[0] +  " " + laststruc->front().identifier;
+		auto fullident = laststruc->front().type.front().spec.basicdeclspec.basic[0] +  " " + laststruc->front().type.front().spec.basicdeclspec.basic[3];
 		auto idtostore = callstring("getidtostor", fullident.c_str(), fullident.length());
 		assert(idtostore != -1);
 		auto elemtopush = *laststruc;
@@ -3559,10 +3551,11 @@ void fixupstructype(std::list<::var>* var) {
 	if(foundstruc != structtypes.end()) {
 
 		var->front().pllvmtype = *foundstruc;
-		if(!(*foundstruc)->isOpaque()) return;
-	}
-	else {
+
+	} else {
+
 		var->front().pllvmtype = llvm::StructType::create((*llvmctx), var->front().identifier);
+
 	}
 
 	for (auto& a : *var | _Ranges::views::drop(1))
@@ -3580,7 +3573,9 @@ void fixupstructype(std::list<::var>* var) {
 			return tmp;
 		});
 
-	dyn_cast<llvm::StructType> (structvar.pllvmtype)->setBody(tmp);
+	if(dyn_cast<llvm::StructType> (structvar.pllvmtype)->isOpaque())
+
+		dyn_cast<llvm::StructType> (structvar.pllvmtype)->setBody(tmp);
 }
 
 const std::list<::var>* getstructorunion(bascitypespec& basic) {
@@ -3590,6 +3585,8 @@ const std::list<::var>* getstructorunion(bascitypespec& basic) {
 	//const unsigned long long lastpos = getcurrpos();
 
 	std::string ident = basic.basic[3];
+
+	bool triedagain = false;
 
 	if(!ident.empty()) {
 tryagain:
@@ -3605,22 +3602,13 @@ tryagain:
 
 			if (iter != scope.rend())
 				return var = &*iter, true;
+			return false;
 		});
 
 		THREAD_LOCAL static std::list<std::list<::var>> tmps;
 
 		if (!var) {
-			auto iter = std::find_if(
-				tmps.rbegin(), tmps.rend(),
-				[&](const std::list<::var>& scopevar) {
-					return scopevar.front().identifier == ident &&
-						scopevar.front().type.front().spec.basicdeclspec.basic[0] == basic.basic[0];
-				});
 
-			if (iter != tmps.rend()) {
-				var = &*iter;
-				goto test;
-			}
 			//unsigned sofar = evalperlexpruv("scalar($nfilescopesrequested)");
 
 			std::string fullident = basic.basic[0] + " " + ident;
@@ -3629,14 +3617,18 @@ tryagain:
 			
 			if (id != -1) {
 				do {
+					assert(!triedagain);
 					//printf("looking for %d - %d\n", id, evalperlexpruv("pos()"));
 					//registerndwait(id);
 
 					if (structorunionmembers_global[stringhash(fullident.c_str())].contains(id)) {
 						std::unique_lock lck{boradcastingstrc};
-						tmps.push_back(structorunionmembers_global[stringhash(fullident.c_str())][id]);
-						var = &tmps.back();
+						structorunionmembers.front().push_front(structorunionmembers_global[stringhash(fullident.c_str())][id]);
+						//triedagain = true;
+						//goto tryagain;
+						var = &structorunionmembers.front().front();
 						assert(var->front().linkage == "[[completed]]");
+						assert(!var->front().pllvmtype);
 						break;
 					}
 
