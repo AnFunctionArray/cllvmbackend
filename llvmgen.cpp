@@ -2809,11 +2809,9 @@ static THREAD_LOCAL std::list<::val>::iterator curr_init_imm_pos;
 DLL_EXPORT void init_go_up_level(std::unordered_map<unsigned, std::string>& hashes) {
 	auto &lastvar = currtypevectorbeingbuild.back().p->back();
 	--curr_init_level;
-	auto last_imm_pos = ::immidiates.insert(curr_init_level_imms_pos_base.back(), {});
-	auto val = phndl->initialize_val_aggregate({curr_init_level, lastvar.type.end()}, {++std::list<::val>::iterator{last_imm_pos}, curr_init_imm_pos});
-	if (!curr_init_imm_pos->value)
-		::immidiates.erase(curr_init_imm_pos);
-	::immidiates.insert(last_imm_pos, val);
+	auto last_imm_pos = ::immidiates.insert(curr_init_level_imms_pos_base.back(), ::val{}),
+		next_imms_pos = last_imm_pos;
+	*last_imm_pos = phndl->initialize_val_aggregate({curr_init_level, lastvar.type.end()}, {++next_imms_pos, curr_init_imm_pos});
 	curr_init_level_imms_pos_base.pop_back();
 	curr_init_imm_pos = last_imm_pos;
 }
@@ -3084,7 +3082,7 @@ void addvar(var& lastvar, llvm::Constant* pInitializer) {
 		case type::ARRAY:
 		case type::BASIC:
 			lastvar.value = new llvm::GlobalVariable(
-				*mainmodule, lastvar.requestType(), false,
+				*mainmodule, pInitializer ? pInitializer->getType() : lastvar.requestType(), false,
 				linkagetype,
 				pInitializer ? pInitializer : lastvar.linkage.empty() ? llvm::Constant::getNullValue(lastvar.requestType())
 				: nullptr,
