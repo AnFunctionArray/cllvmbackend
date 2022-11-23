@@ -5,6 +5,7 @@
 //#include "range/v3/view/reverse.hpp"
 
 #include "range/v3/view/reverse.hpp"
+#include "range/v3/view/single.hpp"
 #ifdef _WIN32
 #define _WSPIAPI_H_
 #ifdef NDEBUG
@@ -931,6 +932,13 @@ struct var : valbase {
 	bool ispotentiallywrong = false;
 };
 
+uint64_t getConstantIntegerValue(const ::val &value) {
+	return value.type.front().spec.basicdeclspec.basic[0] == "unsigned" ?
+		llvm::dyn_cast<llvm::ConstantInt> (value.constant)->getZExtValue()
+		:
+		llvm::dyn_cast<llvm::ConstantInt> (value.constant)->getSExtValue();
+}
+
 THREAD_LOCAL static std::list<var>::iterator currfunc;
 
 /*struct valueorconstant {
@@ -1034,6 +1042,76 @@ static ::type getequivalentfloattype(::type inweirdtype) {
 
 struct basehndl /* : bindings_compiling*/ {
 	//virtual llvm::Value* assigntwovalues() = 0;
+
+	virtual void constructstring() {
+		std::list<::type> stirngtype{ 1, ::type::ARRAY };
+
+		stirngtype.back().spec.array.nelems = currstring.size() + 1;
+
+		stirngtype.push_back({ ::type::BASIC });
+
+		stirngtype.back().spec.basicdeclspec.basic[1] = "char";
+
+		auto lvalue = llvmbuilder->CreateGlobalStringPtr(
+			currstring, "", 0);
+
+		immidiates.push_back(
+			val{ stirngtype, lvalue, "[[stringliteral]]" });
+		auto& imm = immidiates.back();
+		imm.lvalue = lvalue;
+		imm.value = llvmbuilder->CreateLoad(imm.requestType(), imm.value);
+	}
+
+	virtual ::val initialize_val_aggregate(_Ranges::subrange<std::list<::type>::iterator> iteratorty, _Ranges::subrange<std::list<::val>::iterator> immsiter) {
+		::var tmp{std::list<::type>{iteratorty.begin(), iteratorty.end()}, {}};
+
+		tmp.requestValue();
+
+		size_t imember = 0;
+
+		std::vector<llvm::Value*> tmpimmidiates;
+
+		if (iteratorty.front().uniontype == type::ARRAY)
+			iteratorty.front().spec.array.nelems = std::max((uint64_t)std::distance(immsiter.begin(), immsiter.end()), iteratorty.front().spec.array.nelems) ;
+
+		if(iteratorty.front().uniontype == type::BASIC) {
+			if(iteratorty.front().spec.basicdeclspec.basic[0] != "struct")
+			throw std::logic_error{"unsupported"};
+		}
+		
+
+		auto paggregatety = tmp.requestType();
+		for (auto imm : immsiter) {
+			auto member = llvmbuilder->CreateGEP(paggregatety, tmp.value, { llvmbuilder->getInt32(0), llvmbuilder->getInt32(imember) });
+			llvmbuilder->CreateStore(imm.value, member);
+		}
+		
+		::val imm{tmp};
+
+		imm.identifier = "[[initalizer_val_aggr]]";
+
+		imm.lvalue = tmp.value;
+
+		imm.value = llvmbuilder->CreateLoad(tmp.pllvmtype, tmp.value);
+
+		//immidiates.insert(immsiter.end(), imm);
+		immidiates.erase(immsiter.begin(), immsiter.end());
+		return imm;
+	}
+
+	virtual void init_end() {
+		auto iter_last_imm = --::immidiates.end();
+
+		auto &lastvar = currtypevectorbeingbuild.back().p->back();
+
+		obtainvalbyidentifier(lastvar.identifier);
+
+		::immidiates.insert(iter_last_imm, ::immidiates.back());
+
+		::immidiates.pop_back();
+
+		phndl->assigntwovalues();
+	}
 
 	virtual val convertTo(val target, std::list<::type> to, bool bdecay=true) {
 		extern val decay(val lvalue, bool bfunonly);
@@ -2239,6 +2317,51 @@ struct handlecnstexpr : handlefpexpr {
 	virtual void begin_branch() { }
 	virtual void end_binary() { }
 
+	virtual void constructstring() override {
+		std::list<::type> stirngtype{ 1, ::type::ARRAY };
+
+		stirngtype.back().spec.array.nelems = currstring.size() + 1;
+
+		stirngtype.push_back({ ::type::BASIC });
+
+		stirngtype.back().spec.basicdeclspec.basic[1] = "char";
+
+		::val imm = {stirngtype, {}, "[[stringliteral]]"};
+
+		imm.requestType();
+
+		imm.constant = llvm::ConstantDataArray::getRaw(currstring, stirngtype.back().spec.array.nelems, (++imm.type.begin())->cachedtype);
+
+		immidiates.push_back(imm);
+	}
+
+	virtual ::val initialize_val_aggregate(_Ranges::subrange<std::list<::type>::iterator> iteratorty, _Ranges::subrange<std::list<::val>::iterator> immsiter) override {
+		::val tmp{std::list<::type>{iteratorty.begin(), iteratorty.end()}, {}, "[[initalizer_val_aggr]]"};
+
+		std::vector<llvm::Constant*> constantimmidiates;
+		iteratorty.front().spec.array.nelems = std::max((uint64_t)std::distance(immsiter.begin(), immsiter.end()), iteratorty.front().spec.array.nelems) ;
+		for (auto iter : immsiter) {
+			constantimmidiates.push_back(iter.constant);
+		}
+		if(iteratorty.front().uniontype == type::BASIC) {
+			if(iteratorty.front().spec.basicdeclspec.basic[0] == "struct") {
+				tmp.constant = llvm::ConstantStruct::get(dyn_cast<llvm::StructType>(iteratorty.front().cachedtype), constantimmidiates);
+			}
+			throw std::logic_error{"unsupported"};
+		}
+		else {
+			tmp.constant = llvm::ConstantArray::get(dyn_cast<llvm::ArrayType>(iteratorty.front().cachedtype), constantimmidiates);
+		}
+
+		//immidiates.insert(immsiter.end(), tmp);
+		immidiates.erase(immsiter.begin(), immsiter.end());
+		return tmp;
+	}
+
+	virtual void init_end() override {
+		addvar(currtypevectorbeingbuild.back().p->back(), ::immidiates.back().constant);
+	}
+
 	virtual val convertTo(val target, std::list<::type> to) {
 		bool comparetwotypesshallow(std::list<::type> one, std::list<::type> two);
 		if (comparetwotypesshallow(target.type, to)) {
@@ -2248,11 +2371,16 @@ struct handlecnstexpr : handlefpexpr {
 
 		printtype(buildllvmtypefull(to), "to");
 
-		if (bIsBasicInteger(to.front()))
-			if (bIsBasicInteger(target.type.front()))
-				target.value = llvm::ConstantExpr::getIntegerCast(
-					dyn_cast<llvm::Constant>(target.value), buildllvmtypefull(to),
-					target.type.front().spec.basicdeclspec.basic[0] != "unsigned");
+		if (bIsBasicInteger(to.front()) && bIsBasicInteger(target.type.front()))
+			target.value = llvm::ConstantExpr::getIntegerCast(
+				dyn_cast<llvm::Constant>(target.value), buildllvmtypefull(to),
+				target.type.front().spec.basicdeclspec.basic[0] != "unsigned");
+		else if(target.type.front().uniontype == type::POINTER || to.front().uniontype == type::POINTER ) {
+			target.value = llvm::ConstantExpr::getPointerCast(target.constant, buildllvmtypefull(to));
+		}
+		else if(bIsBasicFloat(target.type.front()) || bIsBasicFloat(to.front())) {
+			target.value = llvm::ConstantExpr::getFPCast(target.constant, buildllvmtypefull(to));
+		}
 
 		target.type = to;
 
@@ -2674,60 +2802,95 @@ found:
 	return var;
 }
 
-DLL_EXPORT void begin_initializer(std::unordered_map<unsigned, std::string>& hashes) {
-	if (scopevar.size() == 1)
-		beginconstantexpr();
+static THREAD_LOCAL std::list<::type>::iterator curr_init_level;
+static THREAD_LOCAL std::list<std::list<::val>::iterator> curr_init_level_imms_pos_base;
+static THREAD_LOCAL std::list<::val>::iterator curr_init_imm_pos;
+
+DLL_EXPORT void init_go_up_level(std::unordered_map<unsigned, std::string>& hashes) {
+	auto &lastvar = currtypevectorbeingbuild.back().p->back();
+	--curr_init_level;
+	auto last_imm_pos = ::immidiates.insert(curr_init_level_imms_pos_base.back(), {});
+	auto val = phndl->initialize_val_aggregate({curr_init_level, lastvar.type.end()}, {++std::list<::val>::iterator{last_imm_pos}, curr_init_imm_pos});
+	if (!curr_init_imm_pos->value)
+		::immidiates.erase(curr_init_imm_pos);
+	::immidiates.insert(last_imm_pos, val);
+	curr_init_level_imms_pos_base.pop_back();
+	curr_init_imm_pos = last_imm_pos;
 }
 
-THREAD_LOCAL static llvm::SmallVector<llvm::Constant*> constantimmidiates;
+DLL_EXPORT void init_go_down_level(std::unordered_map<unsigned, std::string>& hashes) {
+	++curr_init_level;
+	curr_init_level_imms_pos_base.push_back({ curr_init_imm_pos });
+}
 
-DLL_EXPORT void finalize_initializer(std::unordered_map<unsigned, std::string>& hashes) {
-	auto &lastvar = currtypevectorbeingbuild.back().p->back();
-	if (lastvar.type.front().uniontype == type::ARRAY) {
-		if (scopevar.size() > 1) {
-			for (auto i : _Ranges::reverse_view(_Ranges::iota_view<size_t, size_t>(0zu, immidiates.size() - 1))) {
-				obtainvalbyidentifier(lastvar.identifier);
-				insertinttoimm(std::to_string(i).c_str(), std::to_string(i).length(), "ul", sizeof "ul" - 1, 3);
-				phndl->subscripttwovalues();
-				std::swap(immidiates.back(), *----immidiates.end());
-				phndl->assigntwovalues();
-				immidiates.pop_back();
-			}
-		}
-		else {
-			lastvar.type.front().spec.array.nelems = constantimmidiates.size();
+DLL_EXPORT void init_end(std::unordered_map<unsigned, std::string>& hashes) {
+	if (!::immidiates.back().value)
+		::immidiates.pop_back();
+	curr_init_level_imms_pos_base.pop_back();
+	phndl->init_end();
+	::immidiates.clear();
+	::immidiates.resize(1);
+	if (scopevar.size() == 1) {
+		endconstantexpr();
+	}
+}
 
-			addvar(lastvar,
-				llvm::ConstantArray::get(dyn_cast<llvm::ArrayType>
-					(lastvar.requestType()), constantimmidiates));
+DLL_EXPORT void init_commit() {
+
+	auto curr_imm = ::immidiates.back();
+
+	::immidiates.pop_back();
+
+	*curr_init_imm_pos = phndl->convertTo(curr_imm, {*curr_init_level});
+
+	++curr_init_imm_pos;
+
+	if (curr_init_imm_pos == ::immidiates.end()) {
+		::immidiates.resize(::immidiates.size() + 1);
+		curr_init_imm_pos = --::immidiates.end();
+	}
+}
+
+extern const std::list<::var>* getstructorunion(bascitypespec& basic);
+
+uint64_t getConstantIntegerValue(const ::val &value);
+
+DLL_EXPORT void go_to_level(std::unordered_map<unsigned, std::string>& hashes) {
+	std::string ident_to_adjust_to = hashes["dsig_ident"_h];
+	size_t number{};
+
+	if(!ident_to_adjust_to.empty()) {
+		auto pstruct = getstructorunion(curr_init_level->spec.basicdeclspec);
+		for (auto &mem : *pstruct | _Ranges::views::drop(1)) {
+			if(mem.identifier == ident_to_adjust_to) break;
+			++number;
 		}
 	}
 	else {
-		if (scopevar.size() > 1) {
-			obtainvalbyidentifier(lastvar.identifier);
-			std::swap(immidiates.back(), *----immidiates.end());
-			phndl->assigntwovalues();
-			immidiates.pop_back();
-		}
-		else {
-			addvar(lastvar,
-				constantimmidiates[0]);
-		}
-	}
-
-	if (scopevar.size() == 1)
-		endconstantexpr();
-
-	constantimmidiates.clear();
-}
-
-DLL_EXPORT void extract() {
-	auto &lastvar = currtypevectorbeingbuild.back().p->back();
-
-	if (scopevar.size() == 1) {
-		constantimmidiates.push_back(dyn_cast<llvm::Constant>(::immidiates.back().value));
+		number = getConstantIntegerValue(::immidiates.back());
 		::immidiates.pop_back();
 	}
+
+	if (number >= ::immidiates.size()) {
+		::immidiates.resize(number + 1);
+	}
+
+	curr_init_imm_pos = curr_init_level_imms_pos_base.back();
+
+	std::advance(curr_init_imm_pos, number);
+}
+
+DLL_EXPORT void begin_initializer(std::unordered_map<unsigned, std::string>& hashes) {
+	auto &lastvar = currtypevectorbeingbuild.back().p->back();
+
+	lastvar.requestType();
+
+	curr_init_level = lastvar.type.begin();
+
+	curr_init_level_imms_pos_base = { curr_init_imm_pos = --::immidiates.end() };
+
+	if (scopevar.size() == 1)
+		beginconstantexpr();
 }
 
 DLL_EXPORT void addplaintexttostring(std::unordered_map<unsigned, std::string>& hashes) {
@@ -2820,26 +2983,6 @@ DLL_EXPORT void end_ternary() {
 
 DLL_EXPORT void comma() {
 	immidiates.pop_back();
-}
-
-DLL_EXPORT void constructstring() {
-	std::list<::type> stirngtype{ 1, ::type::ARRAY };
-
-	stirngtype.back().spec.array.nelems = currstring.size() + 1;
-
-	stirngtype.push_back({ ::type::BASIC });
-
-	stirngtype.back().spec.basicdeclspec.basic[1] = "char";
-
-	auto lvalue = llvmbuilder->CreateGlobalStringPtr(
-		currstring, "", 0);
-
-	immidiates.push_back(
-		val{ stirngtype, lvalue, "[[stringliteral]]" });
-	auto& imm = immidiates.back();
-	imm.lvalue = lvalue;
-	imm.value = llvmbuilder->CreateLoad(imm.requestType(), imm.value);
-	currstring = "";
 }
 
 static std::string mangle(std::list<::type> type);
@@ -4086,9 +4229,7 @@ DLL_EXPORT void addCase() {
 	splitbb("", 0);
 	auto &lastval = phndl->immidiates.back();
 
-	long long val = lastval.type.front().spec.basicdeclspec.basic[0] == "unsigned" ?
-		 llvm::dyn_cast<llvm::ConstantInt> (lastval.constant)->getZExtValue() : 
-		 llvm::dyn_cast<llvm::ConstantInt> (lastval.constant)->getSExtValue();
+	auto val = getConstantIntegerValue(lastval);
 
 	lastval.constant = llvm::ConstantInt::get(currswitch.back().first->getCondition()->getType(), val, lastval.type.front().spec.basicdeclspec.basic[0] != "unsigned");
 	
@@ -5493,7 +5634,10 @@ DLL_EXPORT void enddeclaration(std::unordered_map<unsigned, std::string>&hashes)
 }
 //virtual void unused_50() { };
 DLL_EXPORT void add_literal(std::unordered_map<unsigned, std::string> &hashes) {
-	if (hashes["begincharliteral"_h] == "\"") constructstring();
+	if (hashes["begincharliteral"_h] == "\"") {
+		phndl->constructstring();
+		currstring = "";
+	}
 	else {
 		std::stringstream ssstream;
 		ssstream << (int)currstring[0];
