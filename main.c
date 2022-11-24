@@ -2,7 +2,7 @@
 #define PCRE2_STATIC
 #define _LARGEFILE64_SOURCE
 
-#ifdef NDEBUG
+#ifndef DEBUG_BACKEND
 #define NDEBUGSTATE
 #endif
 #include <setjmp.h>
@@ -490,13 +490,13 @@ void docall(const char *name, size_t szname, void *phashmap) {
 	extern void global_han();
 
 	global_han(cProcName, phashmap);
-#ifdef NDEBUG
+#ifndef DEBUG_BACKEND
 	EXCEPTION_POINTERS* pexc;
 
 	__try {
 #endif
 		((void (*)(void* phashmap))pfunc)(phashmap);
-#ifdef NDEBUG
+#ifndef DEBUG_BACKEND
 	}
 	__except (pexc = GetExceptionInformation(), EXCEPTION_EXECUTE_HANDLER) {
 		handler1(pexc->ExceptionRecord->ExceptionCode);

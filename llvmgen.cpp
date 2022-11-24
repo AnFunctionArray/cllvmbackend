@@ -8,8 +8,7 @@
 #include "range/v3/view/single.hpp"
 #ifdef _WIN32
 #define _WSPIAPI_H_
-#ifdef NDEBUG
-#undef NDEBUG
+#ifndef DEBUG_BACKEND
 #define _ACRTIMP
 #include <cassert>
 #include <cstdio>
@@ -997,6 +996,8 @@ struct opscopeinfo {
 
 THREAD_LOCAL static std::list<opscopeinfo> opsscopeinfo;
 
+using sub_range_ty = _Ranges::subrange<std::list<::type>::iterator>;
+
 //static std::list<std::pair<std::list<std::pair<llvm::BasicBlock *, std::array<llvm::Value *, 3>>>, val>> opbbs;
 
 //static std::list<var> currlogicopval{};
@@ -1043,6 +1044,34 @@ static ::type getequivalentfloattype(::type inweirdtype) {
 struct basehndl /* : bindings_compiling*/ {
 	//virtual llvm::Value* assigntwovalues() = 0;
 
+	virtual void push_imm(std::optional<std::list<::var>::reverse_iterator> var) {
+		extern void printvaltype(::val val);
+
+		assert(var.has_value());
+
+		val immidiate;
+
+
+		llvm::Value* pglobal;
+
+		immidiate.identifier = var.value()->identifier;
+
+		pglobal = immidiate.value = var.value()->requestValue();
+
+		immidiate.type = var.value()->type;
+
+		printvaltype(immidiate);
+
+		immidiate.lvalue = immidiate.value;
+
+		if (immidiate.value && immidiate.type.front().uniontype != type::FUNCTION && !var.value()->isconstant)
+			immidiate.value = llvmbuilder->CreateLoad(immidiate.requestType(), immidiate.value);
+
+		phndl->immidiates.push_back(immidiate);
+
+		printvaltype(immidiate);
+	}
+
 	virtual void constructstring() {
 		std::list<::type> stirngtype{ 1, ::type::ARRAY };
 
@@ -1062,22 +1091,23 @@ struct basehndl /* : bindings_compiling*/ {
 		imm.value = llvmbuilder->CreateLoad(imm.requestType(), imm.value);
 	}
 
-	virtual ::val initialize_val_aggregate(_Ranges::subrange<std::list<::type>::iterator> iteratorty, _Ranges::subrange<std::list<::val>::iterator> immsiter) {
-		::var tmp{std::list<::type>{iteratorty.begin(), iteratorty.end()}, {}};
+	virtual ::val create_val_tmp_aggregate(sub_range_ty iteratorty, _Ranges::subrange<std::list<::val>::iterator> immsiter) {
 
-		tmp.requestValue();
+		::var tmp{ {{iteratorty.begin(), iteratorty.end()}, {}} };
 
 		size_t imember = 0;
 
 		std::vector<llvm::Value*> tmpimmidiates;
 
-		if (iteratorty.front().uniontype == type::ARRAY)
-			iteratorty.front().spec.array.nelems = std::max((uint64_t)std::distance(immsiter.begin(), immsiter.end()), iteratorty.front().spec.array.nelems) ;
+		if (tmp.type.front().uniontype == type::ARRAY)
+			tmp.type.front().spec.array.nelems = std::max((uint64_t)std::distance(immsiter.begin(), immsiter.end()), iteratorty.front().spec.array.nelems) ;
 
 		if(iteratorty.front().uniontype == type::BASIC) {
 			if(iteratorty.front().spec.basicdeclspec.basic[0] != "struct")
 			throw std::logic_error{"unsupported"};
 		}
+
+		tmp.requestValue();
 		
 
 		auto paggregatety = tmp.requestType();
@@ -1099,16 +1129,34 @@ struct basehndl /* : bindings_compiling*/ {
 		return imm;
 	}
 
+	void adjus_aggregate_n_elems_if_needed() {
+		auto last_imm = ::immidiates.back();
+
+		auto& lastvar = currtypevectorbeingbuild.back().p->back();
+
+		if (last_imm.type.front().uniontype == type::ARRAY) {
+			if (lastvar.type.front().uniontype == type::ARRAY){
+				lastvar.type.front().spec.array.nelems = last_imm.type.front().spec.array.nelems;
+
+				lastvar.pllvmtype = nullptr;
+			}
+		}
+	}
+
 	virtual void init_end() {
-		auto iter_last_imm = --::immidiates.end();
+		auto last_imm = ::immidiates.back();
+
+		adjus_aggregate_n_elems_if_needed();
+
+		::immidiates.pop_back();
 
 		auto &lastvar = currtypevectorbeingbuild.back().p->back();
 
+		lastvar.requestValue();
+
 		obtainvalbyidentifier(lastvar.identifier);
 
-		::immidiates.insert(iter_last_imm, ::immidiates.back());
-
-		::immidiates.pop_back();
+		::immidiates.push_back(last_imm);
 
 		phndl->assigntwovalues();
 	}
@@ -2317,10 +2365,42 @@ struct handlecnstexpr : handlefpexpr {
 	virtual void begin_branch() { }
 	virtual void end_binary() { }
 
+	virtual void getaddress() override {
+		
+	}
+
+	virtual void push_imm(std::optional<std::list<::var>::reverse_iterator> var) override {
+		extern void printvaltype(::val val);
+
+		assert(var.has_value());
+
+		val immidiate;
+
+
+		llvm::Value* pglobal;
+
+		immidiate.identifier = var.value()->identifier;
+
+		printvaltype(immidiate);
+
+		immidiate.lvalue = nullptr;
+
+		immidiate.value = var.value()->requestValue();
+
+		immidiate.type = var.value()->type;
+
+		if (immidiate.value->getType()->isPointerTy())
+			immidiate.type.push_front({ type::POINTER });
+
+		phndl->immidiates.push_back(immidiate);
+
+		printvaltype(immidiate);
+	}
+
 	virtual void constructstring() override {
 		std::list<::type> stirngtype{ 1, ::type::ARRAY };
 
-		stirngtype.back().spec.array.nelems = currstring.size() + 1;
+		stirngtype.front().spec.array.nelems = currstring.size() + 1;
 
 		stirngtype.push_back({ ::type::BASIC });
 
@@ -2330,27 +2410,29 @@ struct handlecnstexpr : handlefpexpr {
 
 		imm.requestType();
 
-		imm.constant = llvm::ConstantDataArray::getRaw(currstring, stirngtype.back().spec.array.nelems, (++imm.type.begin())->cachedtype);
+		imm.constant = llvm::ConstantDataArray::getRaw(currstring, stirngtype.front().spec.array.nelems, (++imm.type.begin())->cachedtype);
 
 		immidiates.push_back(imm);
 	}
 
-	virtual ::val initialize_val_aggregate(_Ranges::subrange<std::list<::type>::iterator> iteratorty, _Ranges::subrange<std::list<::val>::iterator> immsiter) override {
-		::val tmp{std::list<::type>{iteratorty.begin(), iteratorty.end()}, {}, "[[initalizer_val_aggr]]"};
+	virtual ::val create_val_tmp_aggregate(sub_range_ty iteratorty, _Ranges::subrange<std::list<::val>::iterator> immsiter) override {
+		::val tmp{ {{iteratorty.begin(), iteratorty.end()}, {}, "[[initalizer_val_aggr]]"} };
 
 		std::vector<llvm::Constant*> constantimmidiates;
-		iteratorty.front().spec.array.nelems = std::max((uint64_t)std::distance(immsiter.begin(), immsiter.end()), iteratorty.front().spec.array.nelems) ;
 		for (auto iter : immsiter) {
 			constantimmidiates.push_back(iter.constant);
 		}
 		if(iteratorty.front().uniontype == type::BASIC) {
 			if(iteratorty.front().spec.basicdeclspec.basic[0] == "struct") {
-				tmp.constant = llvm::ConstantStruct::get(dyn_cast<llvm::StructType>(iteratorty.front().cachedtype), constantimmidiates);
+				tmp.requestType();
+				tmp.constant = llvm::ConstantStruct::get(dyn_cast<llvm::StructType>(tmp.type.front().cachedtype), constantimmidiates);
 			}
-			throw std::logic_error{"unsupported"};
+			else throw std::logic_error{"unsupported"};
 		}
 		else {
-			tmp.constant = llvm::ConstantArray::get(dyn_cast<llvm::ArrayType>(iteratorty.front().cachedtype), constantimmidiates);
+			tmp.type.front().spec.array.nelems = std::max((uint64_t)std::distance(immsiter.begin(), immsiter.end()), iteratorty.front().spec.array.nelems);
+
+			tmp.constant = llvm::ConstantArray::get(dyn_cast<llvm::ArrayType>(tmp.requestType()), constantimmidiates);
 		}
 
 		//immidiates.insert(immsiter.end(), tmp);
@@ -2359,10 +2441,11 @@ struct handlecnstexpr : handlefpexpr {
 	}
 
 	virtual void init_end() override {
+		adjus_aggregate_n_elems_if_needed();
 		addvar(currtypevectorbeingbuild.back().p->back(), ::immidiates.back().constant);
 	}
 
-	virtual val convertTo(val target, std::list<::type> to) {
+	virtual val convertTo(val target, std::list<::type> to, bool bdecay = true) override {
 		bool comparetwotypesshallow(std::list<::type> one, std::list<::type> two);
 		if (comparetwotypesshallow(target.type, to)) {
 			target.type = to;
@@ -2372,14 +2455,38 @@ struct handlecnstexpr : handlefpexpr {
 		printtype(buildllvmtypefull(to), "to");
 
 		if (bIsBasicInteger(to.front()) && bIsBasicInteger(target.type.front()))
-			target.value = llvm::ConstantExpr::getIntegerCast(
-				dyn_cast<llvm::Constant>(target.value), buildllvmtypefull(to),
-				target.type.front().spec.basicdeclspec.basic[0] != "unsigned");
+			target.constant = llvm::ConstantExpr::getIntegerCast(
+				dyn_cast<llvm::ConstantInt>(target.constant), buildllvmtypefull(to),
+				to.front().spec.basicdeclspec.basic[0] != "unsigned");
 		else if(target.type.front().uniontype == type::POINTER || to.front().uniontype == type::POINTER ) {
-			target.value = llvm::ConstantExpr::getPointerCast(target.constant, buildllvmtypefull(to));
+			if(bIsBasicInteger(target.type.front()))
+				target.value = llvm::ConstantExpr::getIntToPtr(target.constant, buildllvmtypefull(to));
+			else if (bIsBasicInteger(to.front()))
+				target.value = llvm::ConstantExpr::getPtrToInt(target.constant, buildllvmtypefull(to));
+			else if (target.type.front().uniontype == type::ARRAY) {
+				if ((++target.type.begin())->uniontype == type::BASIC
+					&& (++target.type.begin())->spec.basicdeclspec.basic[1] == "char") {
+					target.value = llvmbuilder->CreateGlobalStringPtr(
+						dyn_cast<llvm::ConstantDataArray>(target.constant)
+						->getAsCString(), "", 0);
+				}
+			}
 		}
 		else if(bIsBasicFloat(target.type.front()) || bIsBasicFloat(to.front())) {
 			target.value = llvm::ConstantExpr::getFPCast(target.constant, buildllvmtypefull(to));
+		}
+		else if (target.type.front().uniontype == type::ARRAY && to.front().uniontype == type::ARRAY) {
+			// In case we have array to char conversion
+			// We might have excess elements to trim
+	
+			if ((++target.type.begin())->uniontype == type::BASIC && (++target.type.begin())->spec.basicdeclspec.basic[1] == "char"
+				&&
+				(++to.begin())->uniontype == type::BASIC && (++to.begin())->spec.basicdeclspec.basic[1] == "char"
+				) {
+					target.constant = llvm::ConstantDataArray::getString(*llvmctx,
+						dyn_cast<llvm::ConstantDataArray>(target.constant)
+						->getAsString().substr(0, to.front().spec.array.nelems), false);
+				}
 		}
 
 		target.type = to;
@@ -2775,58 +2882,98 @@ checktmpagain:
 found:
 	if (!push) return var;
 
-	assert(var.has_value());
-
-	val immidiate;
-
-
-	llvm::Value* pglobal;
-
-	immidiate.identifier = var.value()->identifier;
-
-	pglobal = immidiate.value = var.value()->requestValue();
-
-	immidiate.type = var.value()->type;
-
-	printvaltype(immidiate);
-
-	immidiate.lvalue = immidiate.value;
-
-	if (immidiate.value && immidiate.type.front().uniontype != type::FUNCTION && !var.value()->isconstant)
-		immidiate.value = llvmbuilder->CreateLoad(immidiate.requestType(), immidiate.value);
-
-	phndl->immidiates.push_back(immidiate);
-
-	printvaltype(immidiate);
+	phndl->push_imm(var);
 
 	return var;
 }
 
-static THREAD_LOCAL std::list<::type>::iterator curr_init_level;
 static THREAD_LOCAL std::list<std::list<::val>::iterator> curr_init_level_imms_pos_base;
 static THREAD_LOCAL std::list<::val>::iterator curr_init_imm_pos;
 
+using elem_init_type = std::list<sub_range_ty>;
+
+struct elem_outter_type {
+	elem_init_type first;
+	elem_init_type::iterator second;
+	std::list<::var>* third;
+};
+
+static THREAD_LOCAL std::list<elem_outter_type> last_init_trgt_type;
+
 DLL_EXPORT void init_go_up_level(std::unordered_map<unsigned, std::string>& hashes) {
 	auto &lastvar = currtypevectorbeingbuild.back().p->back();
-	--curr_init_level;
-	auto last_imm_pos = ::immidiates.insert(curr_init_level_imms_pos_base.back(), ::val{}),
+
+	// See comment at the end of init_commit
+
+	if (last_init_trgt_type.back().third &&
+		((++last_init_trgt_type.back().third->begin())->type.begin()
+			== last_init_trgt_type.back().second->begin() ||
+			last_init_trgt_type.back().second != last_init_trgt_type.back().first.begin()
+			)) {
+		last_init_trgt_type.pop_back();
+	}
+	else {
+		last_init_trgt_type.back().second->advance(-1);
+	}
+	auto last_imm_pos = curr_init_level_imms_pos_base.back(),
 		next_imms_pos = last_imm_pos;
-	*last_imm_pos = phndl->initialize_val_aggregate({curr_init_level, lastvar.type.end()}, {++next_imms_pos, curr_init_imm_pos});
+	*last_imm_pos = phndl->create_val_tmp_aggregate({
+		last_init_trgt_type.back().second->begin(),
+		last_init_trgt_type.back().second->end()
+		}
+		, {++next_imms_pos, curr_init_imm_pos});
 	curr_init_level_imms_pos_base.pop_back();
-	curr_init_imm_pos = last_imm_pos;
+	if (!last_imm_pos->value)
+		::immidiates.erase(last_imm_pos++);
+	curr_init_imm_pos = ++last_imm_pos;
 }
 
+extern std::list<::var>* getstructorunion(bascitypespec& basic);
+
 DLL_EXPORT void init_go_down_level(std::unordered_map<unsigned, std::string>& hashes) {
-	++curr_init_level;
-	curr_init_level_imms_pos_base.push_back({ curr_init_imm_pos });
+	auto& lastvar = currtypevectorbeingbuild.back().p->back();
+
+	if (last_init_trgt_type.back().second->front().uniontype == type::ARRAY) {
+		last_init_trgt_type.back().second->advance(1);
+	}
+	else if(last_init_trgt_type.back().second->front().uniontype == type::BASIC) {
+		if (last_init_trgt_type.back().second->front().spec.basicdeclspec.basic[0] != "struct")
+			throw std::logic_error{ "unsupported" };
+		auto struc = getstructorunion(last_init_trgt_type.back().second->front().spec.basicdeclspec);
+		
+		elem_init_type types_members;
+
+		std::transform(++struc->begin(), struc->end(), std::back_inserter(types_members),
+			[](::var& elem) {
+				return sub_range_ty{elem.type.begin(), elem.type.end()};
+			}
+		);
+
+		last_init_trgt_type.push_back({ types_members, {}, struc });
+
+		last_init_trgt_type.back().second = last_init_trgt_type.back().first.begin();
+	}
+	else {
+		throw std::logic_error{ "invalid aggregate initalisation indirection" };
+	}
+
+	if (::immidiates.size() < 2) {
+		::immidiates.resize(::immidiates.size() + 1);
+		curr_init_level_imms_pos_base.push_back({ ----::immidiates.end() });
+		curr_init_imm_pos = --::immidiates.end();
+	}
+	else {
+		curr_init_level_imms_pos_base.push_back({ ----::immidiates.end() });
+	}
+	
 }
 
 DLL_EXPORT void init_end(std::unordered_map<unsigned, std::string>& hashes) {
 	if (!::immidiates.back().value)
 		::immidiates.pop_back();
+	last_init_trgt_type.pop_back();
 	curr_init_level_imms_pos_base.pop_back();
 	phndl->init_end();
-	::immidiates.clear();
 	::immidiates.resize(1);
 	if (scopevar.size() == 1) {
 		endconstantexpr();
@@ -2835,11 +2982,16 @@ DLL_EXPORT void init_end(std::unordered_map<unsigned, std::string>& hashes) {
 
 DLL_EXPORT void init_commit() {
 
+	auto& lastvar = currtypevectorbeingbuild.back().p->back();
+
+
 	auto curr_imm = ::immidiates.back();
 
 	::immidiates.pop_back();
 
-	*curr_init_imm_pos = phndl->convertTo(curr_imm, {*curr_init_level});
+	auto type = std::list<::type>{ last_init_trgt_type.back().second->begin(), last_init_trgt_type.back().second->end()};
+
+	*curr_init_imm_pos = phndl->convertTo(curr_imm, type);
 
 	++curr_init_imm_pos;
 
@@ -2847,43 +2999,74 @@ DLL_EXPORT void init_commit() {
 		::immidiates.resize(::immidiates.size() + 1);
 		curr_init_imm_pos = --::immidiates.end();
 	}
+
+	// If it's a struct we are aggregate initialising 
+	// iterate to next member
+
+	// It would be a struct if we have not confined
+	// the current type range
+
+	// So this would mean that currnt type range will begin
+	// at the same point as current type list pointer
+
+	// Also once we advance the check is if we are in different 
+	// than the first element in the types list
+
+	if (last_init_trgt_type.back().third &&
+		((++last_init_trgt_type.back().third->begin())->type.begin()
+		== last_init_trgt_type.back().second->begin() ||
+			last_init_trgt_type.back().second != last_init_trgt_type.back().first.begin()
+			)
+		) {
+		++last_init_trgt_type.back().second;
+	}
 }
 
-extern const std::list<::var>* getstructorunion(bascitypespec& basic);
+extern std::list<::var>* getstructorunion(bascitypespec& basic);
 
 uint64_t getConstantIntegerValue(const ::val &value);
 
 DLL_EXPORT void go_to_level(std::unordered_map<unsigned, std::string>& hashes) {
 	std::string ident_to_adjust_to = hashes["dsig_ident"_h];
-	size_t number{};
 
 	if(!ident_to_adjust_to.empty()) {
-		auto pstruct = getstructorunion(curr_init_level->spec.basicdeclspec);
+		auto pstruct = last_init_trgt_type.back().third;
+		last_init_trgt_type.back().second = last_init_trgt_type.back().first.begin();
 		for (auto &mem : *pstruct | _Ranges::views::drop(1)) {
 			if(mem.identifier == ident_to_adjust_to) break;
-			++number;
+			++last_init_trgt_type.back().second;
+			++curr_init_imm_pos;
+
+			if (curr_init_imm_pos == ::immidiates.end()) {
+				::immidiates.resize(::immidiates.size() + 1);
+				curr_init_imm_pos = --::immidiates.end();
+			}
 		}
 	}
 	else {
-		number = getConstantIntegerValue(::immidiates.back());
+		size_t number = getConstantIntegerValue(::immidiates.back());
 		::immidiates.pop_back();
+
+		if (number >= ::immidiates.size()) {
+			::immidiates.resize(number + 1);
+		}
+
+		curr_init_imm_pos = curr_init_level_imms_pos_base.back();
+
+		std::advance(curr_init_imm_pos, number);
 	}
-
-	if (number >= ::immidiates.size()) {
-		::immidiates.resize(number + 1);
-	}
-
-	curr_init_imm_pos = curr_init_level_imms_pos_base.back();
-
-	std::advance(curr_init_imm_pos, number);
 }
 
 DLL_EXPORT void begin_initializer(std::unordered_map<unsigned, std::string>& hashes) {
 	auto &lastvar = currtypevectorbeingbuild.back().p->back();
 
-	lastvar.requestType();
+	lastvar.fixupTypeIfNeeded();
 
-	curr_init_level = lastvar.type.begin();
+	elem_init_type elem_ty{ sub_range_ty{lastvar.type.begin(), lastvar.type.end()}};
+
+	last_init_trgt_type = { {elem_ty, {}, nullptr} };
+
+	last_init_trgt_type.back().second = last_init_trgt_type.back().first.begin();
 
 	curr_init_level_imms_pos_base = { curr_init_imm_pos = --::immidiates.end() };
 
@@ -3081,14 +3264,20 @@ void addvar(var& lastvar, llvm::Constant* pInitializer) {
 		case type::POINTER:
 		case type::ARRAY:
 		case type::BASIC:
+		{
+			auto typevar = lastvar.requestType();
+
+			//pInitializer ? pInitializer->mutateType(typevar) : (void)0;
+
 			lastvar.value = new llvm::GlobalVariable(
-				*mainmodule, pInitializer ? pInitializer->getType() : lastvar.requestType(), false,
+				*mainmodule, typevar, false,
 				linkagetype,
-				pInitializer ? pInitializer : lastvar.linkage.empty() ? llvm::Constant::getNullValue(lastvar.requestType())
-				: nullptr,
+				pInitializer ? pInitializer : (lastvar.linkage.empty() ? llvm::Constant::getNullValue(lastvar.requestType())
+				: nullptr),
 				lastvar.identifier);
 			// scopevar.front ().push_back (lastvar);
 			break;
+		}
 		case type::FUNCTION:
 			printtype(lastvar.requestType(), lastvar.identifier);
 			auto initialfn = reqeustInitialFn(lastvar.identifier);
@@ -3407,7 +3596,7 @@ DLL_EXPORT void applycast() {
 		addvar(currtypevectorbeingbuild.back().p->back());
 }*/
 
-extern const std::list<::var>* getstructorunion(bascitypespec& basic);
+extern std::list<::var>* getstructorunion(bascitypespec& basic);
 
 void pushsizeoftype(val&& value) {
 	size_t szoftype = 1;
@@ -3701,17 +3890,17 @@ void fixupstructype(std::list<::var>* var) {
 
 	for (auto& a : *var | _Ranges::views::drop(1))
 		if (!a.pllvmtype)
+			a.fixupTypeIfNeeded(),
 			a.pllvmtype = (llvm::Type*)-1ULL,
 			tmp.push_back(buildllvmtypefull(a.type));
 
 	auto& structvar = var->front();
 
-	std::transform(tmp.begin(), tmp.end(),
-		++var->begin(), ++var->begin(),
-		[](const llvm::Type* elem, const ::var& out) {
-			::var tmp = out;
-			tmp.pllvmtype = const_cast<llvm::Type*>(elem);
-			return tmp;
+	auto iter_var = ++var->begin();
+
+	std::for_each(tmp.begin(), tmp.end(),
+		[&iter_var](const llvm::Type* elem) {
+			iter_var++->pllvmtype = const_cast<llvm::Type*>(elem);
 		});
 
 	if(dyn_cast<llvm::StructType> (structvar.pllvmtype)->isOpaque())
@@ -3719,7 +3908,7 @@ void fixupstructype(std::list<::var>* var) {
 		dyn_cast<llvm::StructType> (structvar.pllvmtype)->setBody(tmp);
 }
 
-const std::list<::var>* getstructorunion(bascitypespec& basic) {
+std::list<::var>* getstructorunion(bascitypespec& basic) {
 	std::list<::var>* var = nullptr;
 
 	//unsigned long currpos = 0;
@@ -4494,15 +4683,20 @@ DLL_EXPORT void endqualifs(std::unordered_map<unsigned, std::string>&& hashes) {
 	/*if (lastvar.type.front().uniontype == type::FUNCTION) {
 		lastvar.requestValue();
 	}*/
-	if (pcurrblock.empty() && currtypevectorbeingbuild.back().currdecltype != currdecltypeenum::STRUCTORUNION 
-		&& currtypevectorbeingbuild.back().currdecltype != currdecltypeenum::PARAMS)  {
+}
+
+DLL_EXPORT void announce_decl() {
+	auto& lastvar = currtypevectorbeingbuild.back().p->back();
+
+	if (pcurrblock.empty() && currtypevectorbeingbuild.back().currdecltype != currdecltypeenum::STRUCTORUNION
+		&& currtypevectorbeingbuild.back().currdecltype != currdecltypeenum::PARAMS) {
 		auto idtostore = callstring("getidtostor", lastvar.identifier.c_str(), lastvar.identifier.length());
 		assert(idtostore != -1);
 		auto vartopush = lastvar;
 		vartopush.strip();
 		vartopush.linkage = vartopush.linkage != "typedef" ? "extern" : vartopush.linkage;
 		{
-			std::unique_lock lck{boradcastingscope};
+			std::unique_lock lck{ boradcastingscope };
 			scopevars_global[stringhash(lastvar.identifier.c_str())][idtostore] = std::move(vartopush);
 		}
 		callint("broadcastid", idtostore, lastvar.identifier.c_str(), lastvar.identifier.size());
@@ -5011,26 +5205,26 @@ DLL_EXPORT void unaryincdec(std::unordered_map<unsigned, std::string>&& hashes) 
 
 	unsigned int type = 3; // << 2 | 2;
 
-	auto immlvalue = immidiates.back();
+	auto immvalue_non_modified = immidiates.back();
 
-	immlvalue.identifier.append("[[modified]]");
+	if (immvalue_non_modified.type.front().uniontype != type::POINTER)
+
+		immidiates.back() = phndl->requireint(immvalue_non_modified);
 
 	insertinttoimm("1", sizeof "1" - 1, "", 0, type);
 
-	if (immlvalue.type.front().uniontype != type::POINTER)
+	phndl->addlasttwovalues(imm == "--", true);
 
-		immidiates.back() = convertTo(immidiates.back(), immlvalue.type);
+	auto immvalue_modified = immidiates.back();
 
-	phndl->addlasttwovalues(imm == "--", false);
+	immvalue_modified.identifier.append("[[modified]]");
 
-	immidiates.push_back(immlvalue);
-
-	std::rotate(----immidiates.end(), --immidiates.end(), immidiates.end());
+	immidiates.insert(--immidiates.end(), immvalue_non_modified);
 
 	phndl->assigntwovalues();
 
 	if (!immpostfix.empty())
-		immidiates.back() = immlvalue;
+		immidiates.back() = immvalue_non_modified;
 	if (phpriorhndl)
 		phndl->~basehndl(),
 
