@@ -2913,7 +2913,9 @@ DLL_EXPORT void init_go_up_level(std::unordered_map<unsigned, std::string>& hash
 		last_init_trgt_type.pop_back();
 	}
 	else {
-		last_init_trgt_type.back().second->advance(-1);
+		*last_init_trgt_type.back().second = {
+			--last_init_trgt_type.back().second->begin(),
+			last_init_trgt_type.back().second->end()};
 	}
 	auto last_imm_pos = curr_init_level_imms_pos_base.back(),
 		next_imms_pos = last_imm_pos;
@@ -2934,7 +2936,9 @@ DLL_EXPORT void init_go_down_level(std::unordered_map<unsigned, std::string>& ha
 	auto& lastvar = currtypevectorbeingbuild.back().p->back();
 
 	if (last_init_trgt_type.back().second->front().uniontype == type::ARRAY) {
-		last_init_trgt_type.back().second->advance(1);
+		*last_init_trgt_type.back().second = {
+			++last_init_trgt_type.back().second->begin(),
+			last_init_trgt_type.back().second->end()};
 	}
 	else if(last_init_trgt_type.back().second->front().uniontype == type::BASIC) {
 		if (last_init_trgt_type.back().second->front().spec.basicdeclspec.basic[0] != "struct")
