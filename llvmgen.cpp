@@ -3219,6 +3219,8 @@ static ::var *reqeustInitialFn(std::string ident) {
 
 	reset_obtainvalbyidentifier_search();
 
+	iter.value()->fixupTypeIfNeeded();
+
 	return fastmap[ident] = &*iter.value();
 }
 
@@ -3287,7 +3289,7 @@ void addvar(var& lastvar, llvm::Constant* pInitializer) {
 			auto initialfn = reqeustInitialFn(lastvar.identifier);
  			std::string mangledfnname = initialfn && (initialfn->fixupTypeIfNeeded(), true) && !comparefunctiontypeparameters(lastvar.type.front(), initialfn->type.front()) 
 				? lastvar.identifier + mangle(lastvar.type) : lastvar.identifier;
-			if(mangledfnname.size() > 1 && mangledfnname.starts_with("_")) {
+			if(!allowccompat && mangledfnname.size() > 1 && mangledfnname.starts_with("_")) {
 				mangledfnname.erase(mangledfnname.begin());
 			}
 
