@@ -4,7 +4,6 @@
 !src
 !utility
 !.gitignore
-!CMakeLists.txt
 !cparser2.*
 !Readme.md
 !regularcbulk
