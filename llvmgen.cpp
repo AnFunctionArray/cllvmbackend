@@ -575,24 +575,29 @@ struct basic_type_origin {
 	/*
 		0 - last signed/unsigned or struct/union/enum
 		1 - last basic type
-		2 - last storage specifier
+		2 - deprecated - don't use - last storage specifier
 		3 - last typedef or struct/union/enum name
 	*/
 	std::array<std::string, 4> basic;
 	size_t longspecsn{}; //amount of long qualifiers
 	std::bitset<4> qualifiers;
 
-	void* pexternaldata = nullptr;
-
 	bool operator==(const basic_type_origin&) const = default;
 };
 
 struct bascitypespec : basic_type_origin {
 
+	union {
+		std::list<::var>* pannonstruct = nullptr;
+	};
+
+	void seralise(bool doit=true);
+	void strip();
+
 
 	bascitypespec& operator= (const bascitypespec& source) { // basic assignment
 		basic_type_origin::operator=(source);
-		basic[2].clear();
+		//basic[2].clear();
 		return *this;
 	}
 
@@ -611,7 +616,7 @@ struct bascitypespec : basic_type_origin {
 
 	bool operator== (const bascitypespec& comparer) {
 		std::string ignoredmember = comparer.basic[2];
-		auto ignoredqualifs = qualifiers;
+		auto ignoredqualifs = comparer.qualifiers;
 		std::swap(ignoredmember, basic[2]);
 		std::swap(ignoredqualifs, qualifiers);
 		bool bareequal = basic_type_origin::operator==(comparer);
@@ -657,55 +662,6 @@ pointrtypequalifiers parsequalifiers(const std::string& qualifs) {
 		}
 	return ret;
 }
-
-bascitypespec parsebasictype(const std::list<std::string>& qualifs, bascitypespec& ret) {
-	//bascitypespec ret;
-
-	for (const auto& a : qualifs)
-		switch (stringhash(a.c_str())) {
-		case "unsigned"_h:
-		case "signed"_h:
-			ret.basic[0] = a;
-			break;
-		case "long"_h:
-			ret.longspecsn++;
-			if (ret.basic[1].empty())
-				ret.basic[1] = a;
-			break;
-		//case "void"_h:
-		case "_Bool"_h:
-		case "__int64"_h:
-		case "int"_h:
-		case "short"_h:
-		case "char"_h:
-		case "float"_h:
-		case "double"_h:
-			ret.basic[1] = a;
-			break;
-		case "static"_h:
-		case "extern"_h:
-		case "auto"_h:
-		case "typedef"_h:
-			ret.basic[2] = a;
-			break;
-		case "const"_h:
-			ret.qualifiers[0] = 1;
-			break;
-		case "restrict"_h:
-			ret.qualifiers[1] = 1;
-			break;
-		case "volatile"_h:
-			ret.qualifiers[2] = 1;
-			break;
-		case "__stdcall"_h:
-			callingconv.push_back(a);
-			break;
-		default:
-			std::cerr << "invalid specifier: " << a << std::endl;
-			std::terminate();
-		}
-	return ret;
-}
 struct var;
 
 struct type {
@@ -723,6 +679,9 @@ struct type {
 
 	type(typetype a) : spec{ a }, uniontype{ a } {};
 	struct functype {
+		void seralise(bool bdoit);
+		void strip();
+
 		std::list<std::list<var>> parametertypes_list{ 1 };
 		bool bisvariadic;
 		std::string callconv;
@@ -776,6 +735,24 @@ struct type {
 
 	void strip() {
 		cachedtype = nullptr;
+
+		std::array lambdas = {
+			std::function{[&] { spec.basicdeclspec.strip(); }},
+			std::function{[&] {}},
+			std::function{[&] {}},
+			std::function{[&] { spec.func.strip(); }} };
+		lambdas[uniontype]();
+	}
+
+	void seralise(bool doit=true) {
+		cachedtype = nullptr;
+
+		std::array lambdas = {
+			std::function{[&] { spec.basicdeclspec.seralise(doit); }},
+			std::function{[&] {}},
+			std::function{[&] {}},
+			std::function{[&] { spec.func.seralise(doit); }} };
+		lambdas[uniontype]();
 	}
 
 	llvm::Type* cachedtype{};
@@ -886,6 +863,27 @@ struct var : valbase {
 
 	llvm::Type* pllvmtype{};
 
+	void seralise(bool doit=true) {
+		for(auto &elem : type) {
+			elem.seralise(doit);
+		}
+		if (doit) {
+			value = nullptr;
+			constant = nullptr;
+			pllvmtype = nullptr;
+		}
+		else {
+			if (type.front().spec.basicdeclspec.basic[1] == "enum") {
+				constant = llvm::ConstantInt::get((*llvmctx), llvm::APInt(32, type.front().spec.basicdeclspec.longspecsn));
+				type.front().spec.basicdeclspec.longspecsn = 0;
+
+				type.front().spec.basicdeclspec.basic[1].clear();
+
+				type.front().spec.basicdeclspec.basic[1] = "int";
+			}
+		}
+	}
+
 	void strip() {
 		for(auto &elem : type) {
 			elem.strip();
@@ -893,17 +891,16 @@ struct var : valbase {
 
 		value = nullptr;
 		constant = nullptr;
-		assert(!firstintroduced);
 		pllvmtype = nullptr;
 	}
 
 	auto requestType() {
-		fixupTypeIfNeeded();
+		fixupTypeIfNeededBase();
 		return pllvmtype ? pllvmtype : 
 			pllvmtype = buildllvmtypefull(type);
 	}
 
-	std::list<::type> fixupTypeIfNeeded() {
+	std::list<::type> fixupTypeIfNeededBase() {
 		if(type.empty()) return type;
 		auto& basicdeclspecarr = type.back().spec.basicdeclspec.basic;
 		if (basicdeclspecarr[0].empty() && basicdeclspecarr[1].empty() && !basicdeclspecarr[3].empty()) {
@@ -911,13 +908,13 @@ struct var : valbase {
 			identifier.clear();
 			auto typedefval = obtainvalbyidentifier(basicdeclspecarr[3], false, true).value();
 			type.pop_back();
-			type.splice(type.end(), typedefval->fixupTypeIfNeeded());
+			type.splice(type.end(), typedefval->fixupTypeIfNeededBase());
 			identifier = tmpident;
 		}
 		return type;
 	}
 	llvm::Value* requestValue() {
-		fixupTypeIfNeeded();
+		fixupTypeIfNeededBase();
 		if ((value == nullptr)
 			&& linkage != "typedef") {
 			addvar(*this);
@@ -930,6 +927,98 @@ struct var : valbase {
 	
 	bool ispotentiallywrong = false;
 };
+
+void parsebasictypenspecs(const std::list<std::string>& qualifs, ::var& outvar) {
+	//bascitypespec ret;
+
+	auto &ret = outvar.type.back().spec.basicdeclspec;
+
+	for (const auto& a : qualifs)
+		switch (stringhash(a.c_str())) {
+		case "unsigned"_h:
+		case "signed"_h:
+			ret.basic[0] = a;
+			break;
+		case "long"_h:
+			ret.longspecsn++;
+			if (ret.basic[1].empty())
+				ret.basic[1] = a;
+			break;
+		//case "void"_h:
+		case "_Bool"_h:
+		case "__int64"_h:
+		case "int"_h:
+		case "short"_h:
+		case "char"_h:
+		case "float"_h:
+		case "double"_h:
+			ret.basic[1] = a;
+			break;
+		case "static"_h:
+		case "extern"_h:
+		case "auto"_h:
+		case "typedef"_h:
+			outvar.linkage = a;
+			break;
+		case "const"_h:
+			ret.qualifiers[0] = 1;
+			break;
+		case "restrict"_h:
+			ret.qualifiers[1] = 1;
+			break;
+		case "volatile"_h:
+			ret.qualifiers[2] = 1;
+			break;
+		case "__stdcall"_h:
+			callingconv.push_back(a);
+			break;
+		default:
+			std::cerr << "invalid specifier: " << a << std::endl;
+			std::terminate();
+		}
+}
+
+void type::functype::seralise(bool bdoit) {
+	for(auto &param : parametertypes_list.front()) {
+		param.seralise(bdoit);
+	}
+}
+
+void type::functype::strip() {
+	for(auto &param : parametertypes_list.front()) {
+		param.strip();
+	}
+}
+
+void ::bascitypespec::seralise(bool bdoit)
+{
+	if (_Ranges::contains(std::array{ "struct", "union", "enum" }, basic[0]) && basic[3].empty() && pannonstruct) {
+		if (bdoit) {
+			pannonstruct = new std::list<::var>{*pannonstruct};
+			for (auto &elem : *pannonstruct) {
+				elem.seralise(bdoit);
+			}
+		}
+		else {
+			structorunionmembers.front().push_front(*pannonstruct);
+			delete pannonstruct;
+			pannonstruct = &structorunionmembers.front().front();
+			for (auto &elem : *pannonstruct) {
+				elem.seralise(bdoit);
+			}
+		}
+	}
+}
+
+void ::bascitypespec::strip()
+{
+	if (_Ranges::contains(std::array{ "struct", "union", "enum" }, basic[0]) && basic[3].empty()) {
+		for (auto &elem : *pannonstruct) {
+			elem.strip();
+		}
+	}
+}
+
 
 uint64_t getConstantIntegerValue(const ::val &value) {
 	return value.type.front().spec.basicdeclspec.basic[0] == "unsigned" ?
@@ -2259,7 +2348,7 @@ struct handlefpexpr : basehndl {
 
 	virtual std::list<struct type> getdefaulttype() override {
 		auto basic = basicint;
-		basic.spec.basicdeclspec.basic[2] = "float";
+		basic.spec.basicdeclspec.basic[1] = "float";
 		return { basic };
 	}
 
@@ -2825,9 +2914,11 @@ checktmpagain:
 					assert(scopevars_global[stringhash(ident.c_str())].contains(id));
 
 					scopevar.front().push_front(scopevars_global[stringhash(ident.c_str())][id]);
+					scopevar.front().front().seralise(false);
 					var = --scopevar.front().rend();
 					for (auto i :_Ranges::reverse_view(_Ranges::iota_view<size_t, size_t>(0zu, id))) {
 						scopevar.front().push_front(scopevars_global[stringhash(ident.c_str())][i]);
+						scopevar.front().front().seralise(false);
 						//updated = true;
 						//var = tmps.rbegin();
 						//goto found;
@@ -3064,7 +3155,7 @@ DLL_EXPORT void go_to_level(std::unordered_map<unsigned, std::string>& hashes) {
 DLL_EXPORT void begin_initializer(std::unordered_map<unsigned, std::string>& hashes) {
 	auto &lastvar = currtypevectorbeingbuild.back().p->back();
 
-	lastvar.fixupTypeIfNeeded();
+	lastvar.requestType();
 
 	elem_init_type elem_ty{ sub_range_ty{lastvar.type.begin(), lastvar.type.end()}};
 
@@ -3219,7 +3310,7 @@ static ::var *reqeustInitialFn(std::string ident) {
 
 	reset_obtainvalbyidentifier_search();
 
-	iter.value()->fixupTypeIfNeeded();
+	iter.value()->requestType();
 
 	return fastmap[ident] = &*iter.value();
 }
@@ -3275,20 +3366,29 @@ void addvar(var& lastvar, llvm::Constant* pInitializer) {
 
 			//pInitializer ? pInitializer->mutateType(typevar) : (void)0;
 
-			lastvar.value = new llvm::GlobalVariable(
+			lastvar.value = mainmodule->getGlobalVariable(lastvar.identifier);
+			
+			lastvar.value || (lastvar.value = new llvm::GlobalVariable(
 				*mainmodule, typevar, false,
 				linkagetype,
 				pInitializer ? pInitializer : (lastvar.linkage.empty() ? llvm::Constant::getNullValue(lastvar.requestType())
 				: nullptr),
-				lastvar.identifier);
+				lastvar.identifier));
+
+			if(lastvar.linkage.empty()) {
+				dyn_cast<llvm::GlobalVariable>(lastvar.value)->setInitializer(pInitializer ? pInitializer : llvm::Constant::getNullValue(lastvar.requestType()));
+			}
 			// scopevar.front ().push_back (lastvar);
 			break;
 		}
 		case type::FUNCTION:
 			printtype(lastvar.requestType(), lastvar.identifier);
 			auto initialfn = reqeustInitialFn(lastvar.identifier);
- 			std::string mangledfnname = initialfn && (initialfn->fixupTypeIfNeeded(), true) && !comparefunctiontypeparameters(lastvar.type.front(), initialfn->type.front()) 
-				? lastvar.identifier + mangle(lastvar.type) : lastvar.identifier;
+			bool ismangle = initialfn && !comparefunctiontypeparameters(lastvar.type.front(), initialfn->type.front()) ;
+ 			std::string mangledfnname = lastvar.identifier;
+			if (ismangle) {
+				mangledfnname += mangle(lastvar.type);
+			}
 			if(!allowccompat && mangledfnname.size() > 1 && mangledfnname.starts_with("_")) {
 				mangledfnname.erase(mangledfnname.begin());
 			}
@@ -3335,7 +3435,7 @@ DLL_EXPORT void check_stray_struc() {
 	if (structvar.identifier.empty()
 		&& currtypevectorbeingbuild.back().currdecltype == currdecltypeenum::STRUCTORUNION) {
 		currtypevectorbeingbuild.back().p->push_back(structvar);
-		currtypevectorbeingbuild.back().p->back().type.front().spec.basicdeclspec.pexternaldata = (void*)&lastmembers;
+		currtypevectorbeingbuild.back().p->back().type.front().spec.basicdeclspec.pannonstruct = &lastmembers;
 	}
 }
 
@@ -3362,7 +3462,7 @@ DLL_EXPORT void endbuildingstructorunion() {
 		assert(idtostore != -1);
 		auto elemtopush = *laststruc;
 		for (auto &elem : elemtopush) {
-			elem.strip();
+			elem.seralise(false);
 		}
 		{
 			std::unique_lock lck{boradcastingstrc};
@@ -3896,7 +3996,7 @@ void fixupstructype(std::list<::var>* var) {
 
 	for (auto& a : *var | _Ranges::views::drop(1))
 		if (!a.pllvmtype)
-			a.fixupTypeIfNeeded(),
+			a.fixupTypeIfNeededBase(),
 			a.pllvmtype = (llvm::Type*)-1ULL,
 			tmp.push_back(buildllvmtypefull(a.type));
 
@@ -3941,8 +4041,6 @@ tryagain:
 			return false;
 		});
 
-		THREAD_LOCAL static std::list<std::list<::var>> tmps;
-
 		if (!var) {
 
 			//unsigned sofar = evalperlexpruv("scalar($nfilescopesrequested)");
@@ -3960,6 +4058,9 @@ tryagain:
 					if (structorunionmembers_global[stringhash(fullident.c_str())].contains(id)) {
 						std::unique_lock lck{boradcastingstrc};
 						structorunionmembers.front().push_front(structorunionmembers_global[stringhash(fullident.c_str())][id]);
+						for (auto &var : structorunionmembers.front().front()) {
+							var.seralise(false);
+						}
 						//triedagain = true;
 						//goto tryagain;
 						var = &structorunionmembers.front().front();
@@ -3975,7 +4076,7 @@ tryagain:
 		}
 	}
 test:
-	if (!var) var = static_cast<std::list<::var>*>(basic.pexternaldata);
+	if (!var) var = basic.pannonstruct;
 
 	if (var && !var->front().pllvmtype)
 		fixupstructype(var);
@@ -4655,10 +4756,6 @@ DLL_EXPORT void endqualifs(std::unordered_map<unsigned, std::string>&& hashes) {
 
 	auto& refbasic = lastvar.type.back().spec.basicdeclspec.basic;
 
-	std::string nontypedeflinkage = refbasic[2];
-
-	if (!nontypedeflinkage.empty()) lastvar.linkage = nontypedeflinkage;
-
 	if (std::all_of(refbasic.begin(), refbasic.end(), [](const std::string& elem) {return elem.empty(); }))
 		if (pcurrblock.empty()) refbasic[1] = "int";
 		else throw std::runtime_error{ "decl with no basic info" };
@@ -4672,7 +4769,7 @@ DLL_EXPORT void endqualifs(std::unordered_map<unsigned, std::string>&& hashes) {
 					auto* reflaststruc = &*laststruc;
 					//if (!reflaststruc->back().pllvmtype) fixupstructype(reflaststruc);
 
-					lastvar.type.back().spec.basicdeclspec.pexternaldata = reflaststruc;
+					lastvar.type.back().spec.basicdeclspec.pannonstruct = reflaststruc;
 				}
 		}
 		else if (0) {
@@ -4699,7 +4796,7 @@ DLL_EXPORT void announce_decl() {
 		auto idtostore = callstring("getidtostor", lastvar.identifier.c_str(), lastvar.identifier.length());
 		assert(idtostore != -1);
 		auto vartopush = lastvar;
-		vartopush.strip();
+		vartopush.seralise();
 		vartopush.linkage = vartopush.linkage != "typedef" ? "extern" : vartopush.linkage;
 		{
 			std::unique_lock lck{ boradcastingscope };
@@ -5800,13 +5897,13 @@ virtual void end_param_list_48() {
 #endif
 DLL_EXPORT void add_type(std::unordered_map<unsigned, std::string>&hashes) {
 	auto& lastvar = currtypevectorbeingbuild.back().p->back();
-	parsebasictype({ hashes["typefound"_h] }, lastvar.type.back().spec.basicdeclspec);
+	parsebasictypenspecs({ hashes["typefound"_h] }, lastvar);
 }
 
 DLL_EXPORT void add_qualif(std::unordered_map<unsigned, std::string>&hashes) {
 	auto& lastvar = currtypevectorbeingbuild.back().p->back();
 	//lastvar.linkage = hashes["storageclass"_h];
-	parsebasictype({ hashes["qualiffound"_h] }, lastvar.type.back().spec.basicdeclspec);
+	parsebasictypenspecs({ hashes["qualiffound"_h] }, lastvar);
 }
 
 DLL_EXPORT void add_tag(std::unordered_map<unsigned, std::string>&hashes) {
@@ -6053,14 +6150,31 @@ DLL_EXPORT void begin_enumerator_def(std::unordered_map<unsigned, std::string> &
 	//int n = getnameloc3("identlast", *ptable, a, 1, { .dontsearchforclosest = 0 }) + 1;
 	currenum = { FIRST_ARG_PTR_AND_SZ };
 }*/
+void announce_enum_def() {
+	auto vartopush = enums.back().back().memberconstants.back();
+	auto vartopushcopy = *vartopush;
+	vartopushcopy.seralise();
+	vartopushcopy.type.front().spec.basicdeclspec.basic[1] = "enum";
+	vartopushcopy.type.front().spec.basicdeclspec.longspecsn = dyn_cast<llvm::ConstantInt>(vartopush->constant)->getSExtValue();
+	auto idtostore = callstring("getidtostor", vartopush->identifier.c_str(), vartopush->identifier.length());
+	assert(idtostore != -1);
+	{
+		std::unique_lock lck{ boradcastingscope };
+		scopevars_global[stringhash(vartopush->identifier.c_str())][idtostore] = vartopushcopy;
+	}
+	callint("broadcastid", idtostore, vartopush->identifier.c_str(), vartopush->identifier.size());
+}
+
 DLL_EXPORT void end_ass_to_enum_def() {
 	enums.back().back().memberconstants.back()->constant = immidiates.back().constant;
 	enums.back().back().maxcount = dyn_cast<llvm::ConstantInt>(enums.back().back().memberconstants.back()->constant)->getSExtValue() + 1;
 	immidiates.pop_back();
 	endconstantexpr();
+	announce_enum_def();
 }
 DLL_EXPORT void end_without_ass_to_enum_def() {
 	enums.back().back().memberconstants.back()->constant = llvm::ConstantInt::get((*llvmctx), llvm::APInt(32, enums.back().back().maxcount++));
+	announce_enum_def();
 }
 
 DLL_EXPORT void global_han(const char* fnname, std::unordered_map<unsigned, std::string> && hashes) {
