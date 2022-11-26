@@ -3010,15 +3010,19 @@ DLL_EXPORT void init_go_up_level(std::unordered_map<unsigned, std::string>& hash
 	}
 	auto last_imm_pos = curr_init_level_imms_pos_base.back(),
 		next_imms_pos = last_imm_pos;
-	*last_imm_pos = phndl->create_val_tmp_aggregate({
+	auto val = phndl->create_val_tmp_aggregate({
 		last_init_trgt_type.back().second->begin(),
 		last_init_trgt_type.back().second->end()
 		}
 		, {++next_imms_pos, curr_init_imm_pos});
 	curr_init_level_imms_pos_base.pop_back();
-	if (!last_imm_pos->value)
-		::immidiates.erase(last_imm_pos++);
-	curr_init_imm_pos = ++last_imm_pos;
+	auto to_insert = last_imm_pos; ++to_insert;
+
+	curr_init_imm_pos = ::immidiates.insert(to_insert, val); ++curr_init_imm_pos;
+
+	if (!last_imm_pos->value) {
+		::immidiates.erase(last_imm_pos);
+	}
 }
 
 extern std::list<::var>* getstructorunion(bascitypespec& basic);
@@ -3052,7 +3056,7 @@ DLL_EXPORT void init_go_down_level(std::unordered_map<unsigned, std::string>& ha
 		throw std::logic_error{ "invalid aggregate initalisation indirection" };
 	}
 
-	if (::immidiates.size() < 2) {
+	if (::immidiates.size() < 2, true) {
 		::immidiates.resize(::immidiates.size() + 1);
 		curr_init_level_imms_pos_base.push_back({ ----::immidiates.end() });
 		curr_init_imm_pos = --::immidiates.end();
