@@ -854,6 +854,8 @@ struct val : valbase {
 	}
 };
 
+val decay(val lvalue, bool bfunonly=false);
+
 
 void addvar(var& lastvar, llvm::Constant* pInitializer = nullptr);
 
@@ -2455,7 +2457,7 @@ struct handlecnstexpr : handlefpexpr {
 	virtual void end_binary() { }
 
 	virtual void getaddress() override {
-		
+		immidiates.back().type.push_front({ type::POINTER });
 	}
 
 	virtual void push_imm(std::optional<std::list<::var>::reverse_iterator> var) override {
@@ -2472,14 +2474,9 @@ struct handlecnstexpr : handlefpexpr {
 
 		printvaltype(immidiate);
 
-		immidiate.lvalue = nullptr;
-
-		immidiate.value = var.value()->requestValue();
+		immidiate.lvalue = immidiate.value = var.value()->requestValue();
 
 		immidiate.type = var.value()->type;
-
-		if (immidiate.value->getType()->isPointerTy())
-			immidiate.type.push_front({ type::POINTER });
 
 		phndl->immidiates.push_back(immidiate);
 
@@ -2536,6 +2533,7 @@ struct handlecnstexpr : handlefpexpr {
 
 	virtual val convertTo(val target, std::list<::type> to, bool bdecay = true) override {
 		bool comparetwotypesshallow(std::list<::type> one, std::list<::type> two);
+		target = decay(target, target.isconstant);
 		if (comparetwotypesshallow(target.type, to)) {
 			target.type = to;
 			return target;
@@ -4427,7 +4425,7 @@ DLL_EXPORT void endforloop() {
 	ifstatements.pop_back();
 }
 
-val decay(val lvalue, bool bfunonly=false) {
+val decay(val lvalue, bool bfunonly) {
 	auto& currtype = lvalue.type;
 	auto elemtype = lvalue.requestType();
 
