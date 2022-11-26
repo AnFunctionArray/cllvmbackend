@@ -2498,6 +2498,8 @@ struct handlecnstexpr : handlefpexpr {
 
 		imm.constant = llvm::ConstantDataArray::getRaw(currstring, stirngtype.front().spec.array.nelems, (++imm.type.begin())->cachedtype);
 
+		imm.isconstant = true;
+
 		immidiates.push_back(imm);
 	}
 
@@ -2523,6 +2525,7 @@ struct handlecnstexpr : handlefpexpr {
 
 		//immidiates.insert(immsiter.end(), tmp);
 		immidiates.erase(immsiter.begin(), immsiter.end());
+		tmp.isconstant = true;
 		return tmp;
 	}
 
