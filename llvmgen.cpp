@@ -6,6 +6,13 @@
 
 #include "range/v3/view/reverse.hpp"
 #include "range/v3/view/single.hpp"
+#include "llvm/ADT/Triple.h"
+#include "llvm/IR/DebugLoc.h"
+#include "llvm/IR/Metadata.h"
+#include "llvm/IR/DebugInfo.h"
+#include "llvm/IR/DIBuilder.h"
+#include "llvm/BinaryFormat/Dwarf.h"
+#include "llvm/IR/DebugInfoMetadata.h"
 #ifdef _WIN32
 #define _WSPIAPI_H_
 #ifndef DEBUG_BACKEND
@@ -135,13 +142,9 @@ extern "C" {
 #include "./main.h"
 }
 
-auto splicethings = [] (auto &reflist, auto &refsrc) {
-	reflist.splice(reflist.end(), refsrc, refsrc.begin(), refsrc.end());
-};
-
-THREAD_LOCAL static std::unordered_map<std::string, unsigned> id2dmap;
-
 static bool allowccompat = true;
+
+static bool allowdebug = false;
 
 static bool pop_obtainvalbyidentifier_last();
 
@@ -187,7 +190,7 @@ static std::list<::var> dummypar2{1};
 
 const std::optional<std::list<struct var>::reverse_iterator> obtainvalbyidentifier(std::string ident, bool push = true, bool bfindtypedef = false, bool bcontinue = false);
 
-extern const struct type basicint, basicsz;
+extern const struct type basicint, basicsz();
 
 enum class currdecltypeenum {
 	STRUCTORUNION,
@@ -269,188 +272,6 @@ std::list<std::list<enumdef>>  *_enums;
 
 THREAD_LOCAL extern std::list<std::pair<std::list<std::string>, bool>> qualifsandtypes;
 
-#if 0
-
-int getnameloc(const char* ntocompare, calloutinfo nametable) {
-	return (int)getnameloc((long long)ntocompare, nametable);
-}
-
-int getnameloc2(const char* ntocompare, struct calloutinfo nametable, pcre2_callout_block* pcurrblock, int displ)
-{
-	return (int)getnameloc2((long long)ntocompare, nametable, pcurrblock, displ);
-}
-
-int getnameloc3(const char* ntocompare, calloutinfo nametable, pcre2_callout_block* pcurrblock, int displ, namelocopts opts) {
-	return (int)getnameloc3((long long)ntocompare, nametable, pcurrblock, displ, opts);
-}
-
-DLL_EXPORT void startforloopcond();
-
-struct bindings_payload {
-	int getnameloc(const char* ntocompare, calloutinfo nametable) {
-		return getnameloc3(ntocompare, nametable, a, 1, { .rev = 0, .dontsearchforclosest = 0,.printdispl = +1 });
-	}
-	struct calloutinfo* ptable;
-	pcre2_callout_block* a;
-	const char** pargs;
-	size_t* szargs;
-};
-
-#endif
-
-//static std::vector<std::vector<std::string>> typedefs{ 1 };
-
-//bool bwastypedefmatched = false;
-
-/*struct bindings_parsing : bindings_payload {
-
-	virtual void cleanup() {}
-	virtual std::string escape_1() { return ""; }
-	virtual std::string text_2() { return ""; }
-	virtual std::string unused_3() { return ""; };
-	virtual std::string start_str_4() { return ""; }
-	virtual std::string num_lit_5() { return ""; }
-	virtual std::string ident_6() { return ""; }
-	virtual std::string start_fn_call_7() { return ""; }
-	virtual std::string member_access_op_8() { return ""; }
-	virtual std::string postfix_arith_9() { return ""; }
-	virtual std::string prefix_arith_10() { return ""; }
-	virtual std::string decl_ptr_11() { return ""; }
-	virtual std::string decl_subs_12() { return ""; }
-	virtual std::string end_fn_call_13() { return ""; }
-	virtual std::string unexplored_end_sizeof_14() { return ""; }
-	virtual std::string begin_sizeof_15() { return ""; }
-	virtual std::string unused_16() { return ""; };
-	virtual std::string unused_17() { return ""; };
-	virtual std::string unused_18() { return ""; };
-	virtual std::string unary_op_19() { return ""; }
-	virtual std::string add_op_20() { return ""; }
-	virtual std::string mul_op_21() { return ""; }
-	virtual std::string shift_op_22() { return ""; }
-	virtual std::string rel_op_23() { return ""; }
-	virtual std::string eq_op_24() { return ""; }
-	virtual std::string and_op_25() { return ""; }
-	virtual std::string xor_op_26() { return ""; }
-	virtual std::string or_op_27() { return ""; }
-	virtual std::string and_logic_op_28() { return ""; }
-	virtual std::string or_logic_op_29() { return ""; }
-	virtual std::string assign_op_30() { return ""; }
-	virtual std::string unused_31() { return ""; };
-	virtual std::string ternary_true_32() { return ""; }
-	virtual std::string ternary_33() { return ""; }
-	virtual std::string ternary_false_34() { return ""; }
-	virtual std::string comma_op_35() { return ""; }
-	virtual std::string unused_36() { return ""; };
-	virtual std::string unused_37() { return ""; };
-	virtual std::string identifier_typedef_38() {
-		//std::string n = getnameloc3("typedefnm", *ptable, a, 0, { .rev = 0, .last = 0, .dontsearchforclosest = 0, });
-		std::string ret = "";
-		//auto ident = std::string{ (char*)GROUP_PTR_AND_SZ(n) };
-		//if (ident.empty()) throw ident;
-		for (auto& typedefscope : typedefs)
-			for (auto& typedefident : typedefscope)
-				ret += typedefident + "|";
-		if (!ret.empty()) ret.pop_back();
-		//ret = ret || bwastypedefmatched;
-		//bwastypedefmatched = bwastypedefmatched || !ret;
-		return ret;
-	}
-	virtual std::string identifier_decl_39() {
-		/*if (qualifsandtypes.back().second)
-		{
-			//std::string n = getnameloc("ident", *ptable) + 1;
-			typedefs.back().push_back({ FIRST_ARG_PTR_AND_SZ });
-			qualifsandtypes.back().second = false;
-		}*/
-		/*	if (szargs[3]) typedefs.back().push_back({FIRST_ARG_PTR_AND_SZ});
-			return "";
-		}
-		virtual std::string start_constant_expr_40() { return ""; }
-		virtual std::string end_decl_sub_41() { return ""; }
-		virtual std::string end_full_decl_42() { return ""; }
-		virtual std::string extend_decl_43() { return ""; }
-		virtual std::string start_new_scope_44() {
-			typedefs.push_back({});
-			return "";
-		}
-		virtual std::string end_of_scope_45() {
-			typedefs.pop_back();
-			return "";
-		}
-		virtual std::string unexplored_46() { return ""; }
-		virtual std::string begin_param_list_47() { return ""; }
-		virtual std::string end_param_list_48() { return ""; }
-		virtual std::string add_type_or_qualifier_49() {
-			//std::string n = getnameloc("typesandqualifiersmask", *ptable);
-			qualifsandtypes.back().first.push_back(std::string{ FIRST_ARG_PTR_AND_SZ });
-
-			return "";
-		}
-		virtual std::string unused_50() { return ""; };
-		virtual std::string add_literal_51() { return ""; }
-		virtual std::string finish_return_statement_52() { return ""; }
-		virtual std::string finish_statement_53() { return ""; }
-		virtual std::string subscript_op_54() { return ""; };
-		virtual std::string decl_begin_55();
-		virtual std::string end_of_sizeof_56() { return ""; }
-		virtual std::string end_of_sizeof_tp_nm_57() { return ""; }
-		virtual std::string ident_struc_58() { return ""; }
-		virtual std::string struc_or_union_body_59() { qualifsandtypes.push_back({}); return ""; }
-		virtual std::string struc_or_union_body_end_60() { qualifsandtypes.pop_back();  return ""; }
-		virtual std::string perform_explicit_conversion_61() { return ""; }
-		virtual std::string create_label_62() { return ""; }
-		virtual std::string goto_stmt_63() { return ""; }
-		virtual std::string switch_stmt_64() { return ""; }
-		virtual std::string create_case_65() { return ""; }
-		virtual std::string switch_stmt_end_66() { return ""; }
-		virtual std::string create_default_case_67() { return ""; }
-		virtual std::string collect_float_literal_68() { return ""; }
-		virtual std::string finish_float_literal_69() { return ""; }
-		virtual std::string begin_if_stm_70() { return ""; }
-		virtual std::string cnt_if_stm_71() { return ""; }
-		virtual std::string finish_if_stm_72() { return ""; }
-		virtual std::string begin_loop_73() { return ""; }
-		virtual std::string loop_iter_74() { return ""; }
-		virtual std::string finish_loop_75() { return ""; }
-		virtual std::string cond_loop_76() { return ""; }
-		virtual std::string begin_do_while_77() { return ""; }
-		virtual std::string finish_do_while_78() { return ""; }
-		virtual std::string finish_continue_stm_79() { return ""; }
-		virtual std::string finish_break_stm_80() { return ""; }
-		virtual std::string register_calling_conv_81() { return ""; }
-		virtual std::string unexplored_82() { return ""; }
-		virtual std::string end_binary_83() { printf2("%s\n", __func__);  return ""; }
-		virtual std::string begin_branch_84() { return ""; }
-		virtual std::string begin_binary_85() { return ""; }
-		virtual std::string unused_86() { return ""; }
-		virtual std::string begin_nested_expr_87() { return ""; }
-		virtual std::string end_nested_expr_88() { return ""; }
-		virtual std::string add_ident_to_enum_def_89() { return ""; }
-		virtual std::string begin_enumerator_def_90() { return ""; }
-		virtual std::string begin_enumerator_decl_91() { return ""; }
-		virtual std::string end_ass_to_enum_def_92() { return ""; }
-		virtual std::string end_without_ass_to_enum_def_93() { return ""; }
-		virtual std::string begin_unnamed_enum_def_94() { return ""; }
-		virtual std::string end_expr_init_95() { return ""; }
-	};
-
-	struct destr_clear_qualifsandtypes : bindings_parsing {
-		virtual std::string decl_begin_55() {
-			qualifsandtypes.back().second = std::find(qualifsandtypes.back().first.begin(), qualifsandtypes.back().first.end(), "typedef") != qualifsandtypes.back().first.end();
-			//bwastypedefmatched = false;
-			return "";
-		}
-		void cleanup() override {
-			qualifsandtypes.back().first.clear();
-		}
-	};
-
-	std::string bindings_parsing::decl_begin_55() {
-		this->~bindings_parsing();
-		new (this)destr_clear_qualifsandtypes();
-		return decl_begin_55();
-	}*/
-
 DLL_EXPORT unsigned constexpr stringhash(char const* input) {
 	return *input ? static_cast<unsigned int> (*input) +
 		33 * stringhash(input + 1)
@@ -472,7 +293,11 @@ constexpr inline auto operator"" _h(char const* p, size_t) {
 
 THREAD_LOCAL static llvm::Module *mainmodule;
 
-llvm::DataLayout* pdatalayout;
+const char* datalayout_str = getenv("DATA_LAYOUT");
+
+static THREAD_LOCAL llvm::DataLayout* pdatalayout;
+
+llvm::Triple *ptriple;
 
 bool bareweinabrupt(bool barewe = false);
 
@@ -480,88 +305,11 @@ THREAD_LOCAL static llvm::LLVMContext *llvmctx;
 
 THREAD_LOCAL static llvm::IRBuilder<> *llvmbuilder;
 
-/*using iterenumtype = std::list<std::list<std::string>>::iterator;
+THREAD_LOCAL static llvm::DIBuilder *llvmdibuilder;
 
-using iterunorstrtype = std::list<std::list<struct var>>::iterator;
+THREAD_LOCAL static llvm::DICompileUnit *llvmcu;
 
-using itervartypedeftype = std::list<struct var>::reverse_iterator;
-
-using variant_origin_type = std::variant<iterenumtype, iterunorstrtype, itervartypedeftype>;
-
-struct basic_type_origin : variant_origin_type
-{
-	union {
-		iterenumtype iterenum;
-		iterunorstrtype iterunorstr;
-		itervartypedeftype vartypedef;
-	};
-
-	enum ORIG_ENUM {
-		ORIG_ENUM_TYPE,
-		ORIG_STRUC_TYPE,
-		ORIG_TYPEDEF,
-		ORIG_PLAIN
-	} orig;
-
-	basic_type_origin(iterenumtype orig) : orig{ ORIG_ENUM_TYPE },
-		variant_origin_type{ iterenum },
-		iterenum{ std::get<iterenumtype>(*this) }
-	{ }
-
-	basic_type_origin(iterunorstrtype orig) : orig{ ORIG_STRUC_TYPE },
-		variant_origin_type{ iterunorstr },
-		iterunorstr{ std::get<iterunorstrtype>(*this) }
-	{ }
-
-	basic_type_origin(itervartypedeftype orig) : orig{ ORIG_TYPEDEF },
-		variant_origin_type{ vartypedef },
-		vartypedef{ std::get<itervartypedeftype>(*this) }
-	{ }
-
-	basic_type_origin() : orig{ ORIG_PLAIN } {}
-
-	basic_type_origin& operator=(const basic_type_origin& val_origin_in) {
-		this->~basic_type_origin();
-
-		new (this)basic_type_origin{ val_origin_in };
-
-		return *this;
-	}
-
-	basic_type_origin(const basic_type_origin& val_origin) {
-
-		switch (orig) if (0)
-		case ORIG_ENUM_TYPE: {
-			if (val_origin.orig != orig)
-				this->~basic_type_origin(), new (this)basic_type_origin{ iterenumtype{} };
-			iterenum = val_origin.iterenum;
-		}
-		else if (0)
-		case ORIG_STRUC_TYPE: {
-			if (val_origin.orig != orig)
-				this->~basic_type_origin(), new (this)basic_type_origin{ iterunorstrtype{} };
-			iterunorstr = val_origin.iterunorstr;
-		}
-		else if (0)
-		case ORIG_TYPEDEF: {
-			if (val_origin.orig != orig)
-				this->~basic_type_origin(), new (this)basic_type_origin{ itervartypedeftype{} };
-			vartypedef = val_origin.vartypedef;
-		}
-	}
-
-	~basic_type_origin() {
-		switch (orig) if (0)
-		case ORIG_ENUM_TYPE:
-			iterenum.~decltype(iterenum)();
-		else if (0)
-		case ORIG_STRUC_TYPE:
-			iterunorstr.~decltype(iterunorstr)();
-		else if (0)
-		case ORIG_TYPEDEF:
-			vartypedef.~decltype(vartypedef)();
-	}
-};*/
+THREAD_LOCAL static llvm::DISubprogram *llvmsub;
 
 /*
 0 - const
@@ -585,13 +333,66 @@ struct basic_type_origin {
 	bool operator==(const basic_type_origin&) const = default;
 };
 
+struct copy_assign_interf {
+    copy_assign_interf() = default;
+    copy_assign_interf(const copy_assign_interf&var) {
+        var.morph_copy(this);
+    }
+
+	copy_assign_interf &operator=(const copy_assign_interf&var) {
+        var.mutate(this);
+        return *this;
+    }
+
+	virtual ~copy_assign_interf() = default;
+
+    virtual void morph_copy(void *pobj) const {
+        new (pobj) copy_assign_interf{};
+    }
+
+    virtual void mutate(void *pobj) const { }
+};
+
+struct annon_struc_mem : copy_assign_interf {
+    ~annon_struc_mem() override = default;
+
+    void morph_copy(void *pobj) const override {
+        new (pobj) annon_struc_mem{};
+        mutate(pobj);
+    }
+
+    void mutate(void *pobj) const override {
+        reinterpret_cast<annon_struc_mem*>(pobj)->annonstruct = annonstruct;
+    }
+
+    std::list<::var> annonstruct;
+};
+
+struct extra_basic_union {
+	extra_basic_union() {
+        new (target_raw) copy_assign_interf{};
+    }
+
+    extra_basic_union(const extra_basic_union &var) {
+        new (target_raw) copy_assign_interf{reinterpret_cast<const copy_assign_interf&>(var.target_raw)};
+    }
+
+    ~extra_basic_union() {
+        reinterpret_cast<copy_assign_interf*>(target_raw)->~copy_assign_interf();
+    }
+
+    extra_basic_union &operator=(const extra_basic_union &var) {
+        *reinterpret_cast<copy_assign_interf*>(target_raw) = reinterpret_cast<const copy_assign_interf&>(var.target_raw);
+        return *this;
+    }
+
+	alignas(annon_struc_mem) std::byte target_raw[sizeof(annon_struc_mem)];
+};
+
 struct bascitypespec : basic_type_origin {
 
-	union {
-		std::list<::var>* pannonstruct = nullptr;
-	};
+	extra_basic_union extra;
 
-	void seralise(bool doit=true);
 	void strip();
 
 
@@ -679,7 +480,6 @@ struct type {
 
 	type(typetype a) : spec{ a }, uniontype{ a } {};
 	struct functype {
-		void seralise(bool bdoit);
 		void strip();
 
 		std::list<std::list<var>> parametertypes_list{ 1 };
@@ -744,17 +544,6 @@ struct type {
 		lambdas[uniontype]();
 	}
 
-	void seralise(bool doit=true) {
-		cachedtype = nullptr;
-
-		std::array lambdas = {
-			std::function{[&] { spec.basicdeclspec.seralise(doit); }},
-			std::function{[&] {}},
-			std::function{[&] {}},
-			std::function{[&] { spec.func.seralise(doit); }} };
-		lambdas[uniontype]();
-	}
-
 	llvm::Type* cachedtype{};
 };
 
@@ -791,13 +580,16 @@ const ::type nbitint = []() {
 	return tmp;
 }();
 
-const ::type basicsz = []() {
+const ::type basicsz() {
 	::type tmp{ type::BASIC };
-	tmp.spec.basicdeclspec.basic[0] = "unsigned";
-	tmp.spec.basicdeclspec.basic[1] = "int";
-	tmp.spec.basicdeclspec.longspecsn = 0;
+	if (pdatalayout->getPointerSizeInBits() == 64)
+		tmp.spec.basicdeclspec.basic[1] = "long",
+		tmp.spec.basicdeclspec.longspecsn = 1;
+	else
+		tmp.spec.basicdeclspec.basic[1] = "int"
+		;
 	return tmp;
-}();
+};
 
 const ::type basiclong = []() {
 	::type tmp{ type::BASIC };
@@ -866,13 +658,8 @@ struct var : valbase {
 	llvm::Type* pllvmtype{};
 
 	void seralise(bool doit=true) {
-		for(auto &elem : type) {
-			elem.seralise(doit);
-		}
 		if (doit) {
-			value = nullptr;
-			constant = nullptr;
-			pllvmtype = nullptr;
+			strip();
 		}
 		else {
 			if (type.front().spec.basicdeclspec.basic[1] == "enum") {
@@ -980,42 +767,16 @@ void parsebasictypenspecs(const std::list<std::string>& qualifs, ::var& outvar) 
 		}
 }
 
-void type::functype::seralise(bool bdoit) {
-	for(auto &param : parametertypes_list.front()) {
-		param.seralise(bdoit);
-	}
-}
-
 void type::functype::strip() {
 	for(auto &param : parametertypes_list.front()) {
 		param.strip();
 	}
 }
 
-void ::bascitypespec::seralise(bool bdoit)
-{
-	if (_Ranges::contains(std::array{ "struct", "union", "enum" }, basic[0]) && basic[3].empty() && pannonstruct) {
-		if (bdoit) {
-			pannonstruct = new std::list<::var>{*pannonstruct};
-			for (auto &elem : *pannonstruct) {
-				elem.seralise(bdoit);
-			}
-		}
-		else {
-			structorunionmembers.front().push_front(*pannonstruct);
-			delete pannonstruct;
-			pannonstruct = &structorunionmembers.front().front();
-			for (auto &elem : *pannonstruct) {
-				elem.seralise(bdoit);
-			}
-		}
-	}
-}
-
 void ::bascitypespec::strip()
 {
-	if (_Ranges::contains(std::array{ "struct", "union", "enum" }, basic[0]) && basic[3].empty()) {
-		for (auto &elem : *pannonstruct) {
+	if (auto pannon = dynamic_cast<annon_struc_mem*>(reinterpret_cast<copy_assign_interf*>(extra.target_raw))) {
+		for (auto &elem : pannon->annonstruct) {
 			elem.strip();
 		}
 	}
@@ -1029,7 +790,12 @@ uint64_t getConstantIntegerValue(const ::val &value) {
 		llvm::dyn_cast<llvm::ConstantInt> (value.constant)->getSExtValue();
 }
 
-THREAD_LOCAL static std::list<var>::iterator currfunc;
+THREAD_LOCAL static std::list<var> empty_func;
+
+THREAD_LOCAL static std::list<var>::iterator currfunc = []() {
+	empty_func.resize(1zu);
+	return empty_func.begin();
+}();
 
 /*struct valueorconstant {
 		template<class T> requires std::same_as<T, llvm::Value*> ||
@@ -1089,47 +855,8 @@ THREAD_LOCAL static std::list<opscopeinfo> opsscopeinfo;
 
 using sub_range_ty = _Ranges::subrange<std::list<::type>::iterator>;
 
-//static std::list<std::pair<std::list<std::pair<llvm::BasicBlock *, std::array<llvm::Value *, 3>>>, val>> opbbs;
-
-//static std::list<var> currlogicopval{};
-#if 0
-static ::type getequivalentintegertype(llvm::Type* inweirdtype) {
-	::type basicty{ type::BASIC };
-	basicty.spec.basicdeclspec.basic[0] = "unsigned";
-	if (pdatalayout->getTypeStoreSize(inweirdtype) == 1) 
-		goto chartype;
-	if (pdatalayout->getTypeStoreSize(inweirdtype) == pdatalayout->getTypeStoreSize(getInt16Ty((*llvmctx)))) 
-		goto shorttype;
-	if (pdatalayout->getTypeStoreSize(inweirdtype) == pdatalayout->getTypeStoreSize(getInt32Ty((*llvmctx))))
-		goto inttype;
-	if (pdatalayout->getTypeStoreSize(inweirdtype) == pdatalayout->getTypeStoreSize(getInt64Ty((*llvmctx))))
-		goto longtype;
-	if (pdatalayout->getTypeStoreSize(inweirdtype) == pdatalayout->getTypeStoreSize(getInt128Ty((*llvmctx))))
-		goto longtype;
-	switch (0) if (0);
-	else if (0) {
-	chartype:
-		basicty.spec.basicdeclspec.basic[1] = "char";
-		return basicty;
-	shorttype:
-		basicty.spec.basicdeclspec.basic[1] = "short";
-		return basicty;
-	inttype:
-		basicty.spec.basicdeclspec.basic[1] = "int";
-		return basicty;
-	longtype:
-		basicty.spec.basicdeclspec.basic[1] = "long";
-		basicty.spec.basicdeclspec.longspecsn = 1;
-		return basicty;
-	}
-	assert(0);
-}
-
-
-#endif
-
 static ::type getequivalentfloattype(::type inweirdtype) {
-	return inweirdtype.spec.basicdeclspec.basic[1] == "double" ? basiclong : basicsz;
+	return inweirdtype.spec.basicdeclspec.basic[1] == "double" ? basiclong : basicsz();
 }
 
 struct basehndl /* : bindings_compiling*/ {
@@ -1291,7 +1018,7 @@ struct basehndl /* : bindings_compiling*/ {
 				target.value = llvmbuilder->CreateFPCast(
 					target.value, buildllvmtypefull(to));
 			else if (target.type.front().uniontype == type::POINTER) {
-				target.value = llvmbuilder->CreatePtrToInt(target.value, buildllvmtypefull({ basicsz }));
+				target.value = llvmbuilder->CreatePtrToInt(target.value, buildllvmtypefull({ basicsz() }));
 				target.value = llvmbuilder->CreateUIToFP(
 						target.value, buildllvmtypefull(to));
 			}
@@ -1303,7 +1030,7 @@ struct basehndl /* : bindings_compiling*/ {
 			if (bIsBasicInteger(target.type.front()))
 				target.value = llvmbuilder->CreateIntToPtr(target.value, buildllvmtypefull(to));
 			else if (bIsBasicFloat(target.type.front()))
-				target = coerceto(target, { basicsz }),
+				target = coerceto(target, { basicsz() }),
 				target.value = llvmbuilder->CreateIntToPtr(target.value, buildllvmtypefull(to));
 			else if(target.type.front().uniontype == type::POINTER) {
 				target.value = llvmbuilder->CreateBitCast(target.value, buildllvmtypefull(to));
@@ -1526,7 +1253,7 @@ struct basehndl /* : bindings_compiling*/ {
 				in = convertTo(in, type, false);
 			}
 			else {
-				in = convertTo(in, { basicsz });
+				in = convertTo(in, { basicsz() });
 			}
 		}
 		if (allowccompat) {
@@ -1597,7 +1324,7 @@ struct basehndl /* : bindings_compiling*/ {
 					}
 				}
 				else
-					ops_in[i] = convertTo(ops_in[i], { basicsz });
+					ops_in[i] = convertTo(ops_in[i], { basicsz() });
 			}
 
 		std::array ops = { &ops_in[0], &ops_in[1] };
@@ -1673,141 +1400,6 @@ struct basehndl /* : bindings_compiling*/ {
 		}
 
 		return ops_in;
-
-		/*for (auto y = 0;; ++y)
-			for (auto i = 0; i < 2; ++i) {
-				switch (y)
-		case 0:
-			if (_Ranges::contains(std::array{ "double", "float" }, ops[i].type.back().spec.basicdeclspec.basic[1]))
-				for (ops[!i] = convertTo(ops[!i], ops[i].type);;)
-					return ops;
-			else default:
-				if (auto& longspncurr = ops[i].type.back().spec.basicdeclspec.longspecsn,
-					&longspnother = ops[!i].type.back().spec.basicdeclspec.longspecsn; 1)
-					switch (auto& typecurr = ops[i].type.back().spec.basicdeclspec.basic[0],
-						&typeother = ops[!i].type.back().spec.basicdeclspec.basic[0]; y)
-		if (1) case 1: switch (i) {
-		case 0:
-			ops[0] = integralpromotions(ops[0]);
-
-			ops[1] = integralpromotions(ops[1]);
-		case 1:
-			if (longspncurr > 1 && typecurr == "unsigned")
-					for (ops[!i].value = CreateCastInst(ops[!i].value, llvm::Type::getInt64Ty((*llvmctx)), typeother != "unsigned"),
-						longspnother = 2, typeother = "unsigned";;)
-						return ops;
-				else
-					return ops;
-		} else case 2: if(1)
-			if (longspncurr > 1 && typecurr != "unsigned")
-				if (longspnother == 1 && typeother == "unsigned")
-					for (longspnother = 2, typeother = "",
-						ops[!i].value = CreateCastInst(ops[!i].value, llvm::Type::getInt64Ty((*llvmctx)), false);;)
-						return ops;
-				else
-					return ops;
-			else case 3: if(1) if (longspncurr > 1 && typecurr != "unsigned")
-					for (longspnother = 2, typeother = "",
-						ops[!i].value = CreateCastInst(ops[!i].value, llvm::Type::getInt64Ty((*llvmctx)), false);;)
-						return ops;
-				else
-					return ops;
-			}
-		ops[0] = integralpromotions(ops[0]);
-
-		ops[1] = integralpromotions(ops[1]);
-
-		if (ops[0].type.back().spec.basicdeclspec == ops[1].type.back().spec.basicdeclspec)
-			return ops;
-
-		for (auto i = 0; i < 2; ++i)
-			if (ops[i].type.back().spec.basicdeclspec.longspecsn > 1 &&
-				ops[i].type.back().spec.basicdeclspec.basic[0] == "unsigned")
-				if (ops[!i].type.back().spec.basicdeclspec.longspecsn <= 1 ||
-					ops[!i].type.back().spec.basicdeclspec.basic[0] != "unsigned")
-					return ops[!i].type.back().spec.basicdeclspec.longspecsn = 2,
-					ops[!i].type.back().spec.basicdeclspec.basic[0] = "unsigned",
-					ops[!i].value = CreateCastInst(ops[!i].value, llvm::Type::getInt64Ty((*llvmctx)), ops[!i].type.back().spec.basicdeclspec.basic[0] != "unsigned"),
-					ops;
-				else
-					return ops;
-
-		for (auto i = 0; i < 2; ++i)
-			if (ops[i].type.back().spec.basicdeclspec.longspecsn > 1 &&
-				ops[i].type.back().spec.basicdeclspec.basic[0] != "unsigned")
-				if (ops[!i].type.back().spec.basicdeclspec.longspecsn == 1 &&
-					ops[!i].type.back().spec.basicdeclspec.basic[0] == "unsigned")
-					return ops[!i].type.back().spec.basicdeclspec.longspecsn = 2,
-					ops[!i].type.back().spec.basicdeclspec.basic[0] = "",
-					ops[!i].value = CreateCastInst(ops[!i].value, llvm::Type::getInt64Ty((*llvmctx)), false),
-					ops;
-
-		for (auto i = 0; i < 2; ++i)
-			if (ops[i].type.back().spec.basicdeclspec.longspecsn > 1 &&
-				ops[i].type.back().spec.basicdeclspec.basic[0] != "unsigned")
-				return ops[!i].type.back().spec.basicdeclspec.longspecsn = 2,
-				ops[!i].type.back().spec.basicdeclspec.basic[0] = "",
-				ops[!i].value = CreateCastInst(ops[!i].value, llvm::Type::getInt64Ty((*llvmctx)),
-					ops[!i].type.back().spec.basicdeclspec.basic[0] != "unsigned"),
-				ops;
-
-
-
-		for (auto i = 0; i < 2; ++i)
-			if (ops[i].type.back().spec.basicdeclspec.basic[1] == "long" &&
-				ops[i].type.back().spec.basicdeclspec.basic[0] == "unsigned")
-				if (ops[!i].type.back().spec.basicdeclspec.basic[1] !=
-					"long" ||
-					ops[!i].type.back().spec.basicdeclspec.basic[0] !=
-					"unsigned")
-					return ops[!i]
-					.type.back()
-					.spec.basicdeclspec
-					.basic[1] = "long",
-					ops[!i].type.back().spec.basicdeclspec.basic[0] = "unsigned",
-					ops[!i].value = CreateCastInst(ops[!i].value, llvm::Type::getInt32Ty((*llvmctx)),
-						ops[!i].type.back().spec.basicdeclspec.basic[0] != "unsigned"),
-					ops;
-				else
-					return ops;
-
-		for (auto i = 0; i < 2; ++i)
-			if (ops[i].type.back().spec.basicdeclspec.basic[1] == "long" &&
-				ops[i].type.back().spec.basicdeclspec.basic[0] != "unsigned")
-				if (ops[!i].type.back().spec.basicdeclspec.basic[1] == "int" &&
-					ops[!i].type.back().spec.basicdeclspec.basic[0] == "unsigned")
-					return ops[!i]
-					.type.back()
-					.spec.basicdeclspec.basic[1] = "long",
-					ops[!i].type.back().spec.basicdeclspec.basic[0] =
-					"",
-					ops[!i].value = CreateCastInst(ops[!i].value, llvm::Type::getInt32Ty((*llvmctx)), false),
-					ops;
-
-		for (auto i = 0; i < 2; ++i)
-			if (ops[i].type.back().spec.basicdeclspec.basic[1] == "long" &&
-				ops[i].type.back().spec.basicdeclspec.basic[0] != "unsigned")
-				return ops[!i]
-				.type.back()
-				.spec.basicdeclspec.basic[1] = "long",
-				ops[!i].type.back().spec.basicdeclspec.basic[0] = "",
-				ops[!i].value = CreateCastInst(ops[!i].value, llvm::Type::getInt32Ty((*llvmctx)),
-					ops[!i].type.back().spec.basicdeclspec.basic[0] != "unsigned"),
-				ops;
-
-		for (auto i = 0; i < 2; ++i)
-			if (ops[i].type.back().spec.basicdeclspec.basic[1] == "int" &&
-				ops[i].type.back().spec.basicdeclspec.basic[0] == "unsigned")
-				return ops[!i]
-				.type.back()
-				.spec.basicdeclspec.basic[1] = "int",
-				ops[!i].type.back().spec.basicdeclspec.basic[0] =
-				"unsigned",
-				ops[!i].value = CreateCastInst(ops[!i].value, llvm::Type::getInt32Ty((*llvmctx)),
-					ops[!i].type.back().spec.basicdeclspec.basic[0] != "unsigned"),
-				ops;
-
-		return ops;*/
 	}
 
 	auto &requireint(::val &op) {
@@ -1820,7 +1412,7 @@ struct basehndl /* : bindings_compiling*/ {
 				op = convertTo(op, type, false);
 			}
 			else
-				op = convertTo(op, { basicsz });
+				op = convertTo(op, { basicsz() });
 		}
 		return op;
 	}
@@ -1983,31 +1575,6 @@ struct basehndl /* : bindings_compiling*/ {
 		immidiates.push_back(ops[0]);
 	}
 
-	/*void endlast (llvm::BasicBlock *bb, var value) {
-		//llvm::Value *logicval = llvmbuilder->CreateICmp (
-		//llvm::CmpInst::Predicate::ICMP_NE, immidiates.back().value,
-		//getValZero (immidiates.back()));
-
-		//llvmbuilder->CreateStore(logicval, pvalue);
-
-		//immidiates.push_back()
-
-		splitbb ("", 0);
-
-		extern std::list<std::pair<std::array<llvm::BranchInst *, 2>, llvm::BasicBlock *>> ifstatements;
-		auto &lastif = ifstatements.back ();
-
-		auto dummysuccessor = lastif.first[0]->getSuccessor (0);
-
-		if (dummysuccessor != lastif.second)
-			lastif.first[0]->setSuccessor (1, bb);
-		else
-			lastif.first[0]->setSuccessor (0, bb);
-
-		lastif.second->eraseFromParent ();
-		ifstatements.pop_back ();
-	}*/
-	//private:
 	virtual void logictwovalues(bool bisand) {
 
 		std::array ops = getops(false);
@@ -2038,53 +1605,6 @@ struct basehndl /* : bindings_compiling*/ {
 
 		immidiates.push_back(ops[0]);
 	}
-
-	/*public:*
-		virtual void logictwovalues_seq(bool bisand) {
-
-			/*auto plastopbb = opbbs.back ().first.back ();
-
-			opbbs.back ().first.pop_back ();*/
-
-			/*	auto lastlogicswitchinstr = opsscopeinfo.back().logicopswitches.back();
-
-				opsscopeinfo.back().logicopswitches.pop_back();
-
-				extern std::list<std::pair<std::array<llvm::BranchInst*, 2>, llvm::BasicBlock*>> ifstatements;
-
-				auto lastif = ifstatements.back();
-
-				//lastif.first[0]->setSuccessor (1, plastopbb.first);
-
-				lastif.second->eraseFromParent();
-				ifstatements.pop_back();
-
-				if (bisand)
-					lastif.first[0]->swapSuccessors();
-				else
-					llvm::ReplaceInstWithInst(dyn_cast<llvm::Instruction> (lastlogicswitchinstr[1]), dyn_cast<llvm::Instruction> (lastlogicswitchinstr[0])),
-					dyn_cast<llvm::Instruction> (lastlogicswitchinstr[0])->eraseFromParent();
-				//dyn_cast<llvm::Instruction>(plastopbb.second[0])->eraseFromParent(),
-				//else
-				//dyn_cast<llvm::StoreInst> (plastopbb.second[2])->setOperand (0, plastopbb.second[1]);
-
-				//immidiates.erase (--immidiates.end ());
-
-				/*extern std::list<std::pair<std::array<llvm::BranchInst *, 2>, llvm::BasicBlock *>> ifstatements;
-				auto &lastif = ifstatements.back ();
-
-				if (opbbs.size () == 1)
-					opbbs.push_back ({});
-
-				//splitbb("", 0);
-
-				startifstatement ();
-
-				//lastif.first[0]->setSuccessor(0, pcurrblock.back());
-
-				//if (bisand)
-				//lastif.first[0]->swapSuccessors();*/
-				//}
 
 	virtual llvm::Value* assigntwovalues() {
 		std::array ops = getops(false, true);
@@ -2778,25 +2298,6 @@ parse_filescope_var(const char *what, size_t sizewhat, int flags, unsigned long 
 
 extern "C" unsigned int evalperlexpruv(const char *what);
 
-/*unsigned long parse_file_scope_ident(std::string ident, unsigned long lastpos, unsigned long currpos) {
-
-
-		currpos = parse_filescope_var(ident.c_str(), ident.size(), 0, lastpos, currpos);
-
-		if(currpos) {
-
-			auto scopevarlastelem = std::move(scopevar.back().back());
-
-			scopevar.back().pop_back();
-				
-			scopevar.front().push_back(std::move(scopevarlastelem));
-
-			scopevar.front().back().firstintroduced = nullptr;
-		}
-
-		return currpos;
-}*/
-
 static unsigned currtop;
 
 static std::mutex maskchn;
@@ -3376,12 +2877,11 @@ void addvar(var& lastvar, llvm::Constant* pInitializer) {
 			lastvar.value || (lastvar.value = new llvm::GlobalVariable(
 				*mainmodule, typevar, false,
 				linkagetype,
-				pInitializer ? pInitializer : (lastvar.linkage.empty() ? llvm::Constant::getNullValue(lastvar.requestType())
-				: nullptr),
+				nullptr,
 				lastvar.identifier));
 
 			if(lastvar.linkage.empty()) {
-				dyn_cast<llvm::GlobalVariable>(lastvar.value)->setInitializer(pInitializer ? pInitializer : llvm::Constant::getNullValue(lastvar.requestType()));
+				dyn_cast<llvm::GlobalVariable>(lastvar.value)->setInitializer(pInitializer ? pInitializer : llvm::Constant::getNullValue(typevar));
 			}
 			// scopevar.front ().push_back (lastvar);
 			break;
@@ -3440,7 +2940,9 @@ DLL_EXPORT void check_stray_struc() {
 	if (structvar.identifier.empty()
 		&& currtypevectorbeingbuild.back().currdecltype == currdecltypeenum::STRUCTORUNION) {
 		currtypevectorbeingbuild.back().p->push_back(structvar);
-		currtypevectorbeingbuild.back().p->back().type.front().spec.basicdeclspec.pannonstruct = &lastmembers;
+		currtypevectorbeingbuild.back().p->back().type.front().spec.basicdeclspec.extra.~extra_basic_union();
+		new (currtypevectorbeingbuild.back().p->back().type.front().spec.basicdeclspec.extra.target_raw) annon_struc_mem{};
+		reinterpret_cast<annon_struc_mem*>(currtypevectorbeingbuild.back().p->back().type.front().spec.basicdeclspec.extra.target_raw)->annonstruct = lastmembers;
 	}
 }
 
@@ -3487,50 +2989,6 @@ DLL_EXPORT void endbuildingstructorunion() {
 
 	//structvar.type.back().spec.basicdeclspec.iterunorstr = structorunionmembers.back().end();
 }
-
-/*void startdeclaration(std::string typedefname) {
-	//std::string typedefname = currdeclspectypedef;
-	var var;
-
-	type basic{ type::BASIC };
-
-	if (qualifsandtypes.back().first.empty() && currstruct.first.empty() && typedefname.empty())
-		assert(!(scopevar.size() > 1) || !currenum.empty()),
-		basic.spec.basicdeclspec.basic[1] = "int";
-	else {
-		auto&& basictypefull = parsebasictype(::qualifsandtypes.back().first); //since ass will lose the storage spec
-		basic.spec.basicdeclspec = basictypefull;
-		var.linkage = basictypefull.basic[2];
-	}
-
-	if (!(basic.spec.basicdeclspec.basic[3] = typedefname).empty()) {
-		//obtainvalbyidentifier(basic.spec.basicdeclspec.basic[3]),
-		auto typetypedf = obtainvalbyidentifier(basic.spec.basicdeclspec.basic[3], false, true)->type;
-		typetypedf.back().spec.basicdeclspec = typetypedf.back().spec.basicdeclspec;
-		std::rotate(typetypedf.begin(), typetypedf.end() - 1, typetypedf.end());
-		var.type = typetypedf;
-	}
-	//immidiates.pop_back();
-
-	currenum /*= currdeclspectypedef/ = "";
-
-	//qualifsandtypes.back().first.clear();
-
-	if (basic.spec.basicdeclspec.basic[3].empty())
-		if (!(basic.spec.basicdeclspec.basic[3] = currstruct.second).empty())
-			basic.spec.basicdeclspec.basic[0] = currstruct.first;
-		else if (!(basic.spec.basicdeclspec.basic[3] = currenum).empty())
-			basic.spec.basicdeclspec.basic[0] = "enum";
-
-	currstruct.first.clear();
-
-	currstruct.second.clear();
-
-	if (var.type.empty())
-		var.type.push_back(basic);
-
-	currtypevectorbeingbuild.back().p->push_back(var);
-}*/
 
 bool bIsBasicFloat(const type& type);
 
@@ -3615,53 +3073,6 @@ val coerceto(val target, std::list<::type> to) {
 	ret.lvalue = target.lvalue;
 
 	return ret;
-
-	/*if (!target.lvalue) {
-		
-	}
-	phndl->immidiates.push_back(target);
-	phndl->getaddress();
-	auto& imm = immidiates.back();
-	imm.type.erase(++imm.type.begin(), imm.type.end());
-	bool bistofloat = false;
-	if (bIsBasicInteger(to.front()) || (bistofloat = bIsBasicFloat(to.front()))) {
-		unsigned maxbytes = pdatalayout->getTypeStoreSize(target.requestType());
-		unsigned minbytes = pdatalayout->getTypeStoreSize(buildllvmtypefull(to));
-
-		if (maxbytes >= minbytes) goto petty;
-
-		type arrty{ type::ARRAY };
-		
-		arrty.spec.array.nelems = maxbytes;
-		arrty.spec.array.qualifiers[0] = 1;
-
-		type unsch{ type::BASIC };
-
-		unsch.spec.basicdeclspec.basic[0] = "unsigned";
-		unsch.spec.basicdeclspec.basic[1] = "char";
-
-		std::list<type> arrtyls { arrty, unsch };
-
-		llvm::Value* rvaluearr = llvmbuilder->CreateLoad(buildllvmtypefull(arrtyls), immidiates.back().value);
-
-		var tmp{ to };
-
-		addvar(tmp);
-
-		llvmbuilder->CreateStore(tmp.value, bistofloat ? handlefpexpr{}.getValZero(val{ tmp }) : basehndl{}.getValZero(val{ tmp }));
-
-		llvmbuilder->CreateStore(tmp.value, rvaluearr);
-
-		immidiates.pop_back();
-
-		return val{ tmp };
-	}
-petty:
-	imm.type.splice(imm.type.end(), to);
-	phndl->applyindirection();
-	auto retimm = immidiates.back();
-	immidiates.pop_back();
-	return retimm;*/
 }
 
 val convertTo(val target, std::list<::type> to, bool bdecay) {
@@ -3689,36 +3100,18 @@ DLL_EXPORT void applycast() {
 	currtypevectorbeingbuild.back().p->pop_back();
 }
 
-/*void endpriordecl() {
-	auto& currtype = currtypevectorbeingbuild.back().p->back().type;
-
-	std::rotate(currtype.begin(), currtype.begin() + 1, currtype.end());
-
-	currtypevectorbeingbuild.back().p->back().firstintroduced = scopevar.size();
-
-	if (currtypevectorbeingbuild.back().currdecltype !=
-		currdecltypeenum::PARAMS
-		&& currtypevectorbeingbuild.back().p->back().linkage.empty()
-		&& currtypevectorbeingbuild.back().p->back().type.front().uniontype != type::FUNCTION
-		&& scopevar.size() == 1)
-		currtypevectorbeingbuild.back()
-		.p->back()
-		.pllvmtype = buildllvmtypefull(currtype),
-		addvar(currtypevectorbeingbuild.back().p->back());
-}*/
-
 extern std::list<::var>* getstructorunion(bascitypespec& basic);
 
 void pushsizeoftype(val&& value) {
 	size_t szoftype = 1;
 
-	szoftype = pdatalayout->getTypeStoreSize(value.requestType());
+	szoftype = pdatalayout->getTypeStoreSizeInBits(value.requestType()) / 8;
 
 	phndl->immidiates.push_back(
-		val{ std::list{basicsz},
+		val{ std::list{basicsz()},
 		llvm::ConstantInt::getIntegerValue(
-				getInt64Ty((*llvmctx)),
-				llvm::APInt{32, szoftype}),
+				pdatalayout->getPointerSizeInBits() == 64 ? getInt64Ty((*llvmctx)) : getInt32Ty((*llvmctx)),
+				llvm::APInt{64, szoftype}),
 			"[[sizeoftypename]]" });
 }
 
@@ -3974,8 +3367,8 @@ void fixupstructype(std::list<::var>* var) {
 				else if (&second == &var->front())
 					return false;
 				return 
-					pdatalayout->getTypeStoreSize(const_cast<::var&>(first).requestType()) >
-					pdatalayout->getTypeStoreSize(const_cast<::var&>(second).requestType());
+					pdatalayout->getTypeAllocSize(const_cast<::var&>(first).requestType()) >
+					pdatalayout->getTypeAllocSize(const_cast<::var&>(second).requestType());
 			}
 		);
 		var->front().pllvmtype = (++var->begin())->pllvmtype;
@@ -4081,7 +3474,7 @@ tryagain:
 		}
 	}
 test:
-	if (!var) var = basic.pannonstruct;
+	if (!var) var = &dynamic_cast<annon_struc_mem*>(reinterpret_cast<copy_assign_interf*>(basic.extra.target_raw))->annonstruct;
 
 	if (var && !var->front().pllvmtype)
 		fixupstructype(var);
@@ -4122,33 +3515,6 @@ llvm::Type* buildllvmtypefull(std::list<type>& refdecltypevector) {
 				pcurrtype = dyn_cast<llvm::Type> (llvm::Type::getIntNTy((*llvmctx), type->spec.basicdeclspec.longspecsn));
 				break;
 				break;
-			addvoid:
-			case "void"_h: {
-				//pcurrtype = llvm::PointerType::get((*llvmctx), 0);
-				/*pcurrtype =
-					dyn_cast<llvm::Type> (llvm::Type::getVoidTy((*llvmctx)));
-				break;
-				break;*/
-				/*pcurrtype = dyn_cast<llvm::Type> (llvm::Type::getInt32Ty((*llvmctx)));
-				pcurrtype = dyn_cast<llvm::Type> (llvm::FunctionType::get(pcurrtype, {}, true));
-				pcurrtype = dyn_cast<llvm::Type> (pcurrtype->getPointerTo());
-				{
-					::type typ{ ::type::BASIC};
-					typ.spec.basicdeclspec.basic[0] = "int";
-					refdecltypevector.insert(iter, typ);
-				}
-				{
-					::type typ{ ::type::FUNCTION};
-					typ.spec.func.bisvariadic = true;
-					refdecltypevector.insert(iter, typ);
-				}
-				::type typ{ ::type::POINTER};
-				refdecltypevector.insert(iter, typ);
-				auto itertoerase = iter--;
-				----iter;
-				refdecltypevector.erase(itertoerase);*/
-			}
-			break;
 		addchar:
 		case "_Bool"_h:
 		case "char"_h:
@@ -4260,6 +3626,8 @@ DLL_EXPORT void beginscope() {
 			.begin();
 		for (auto& arg : dyn_cast<llvm::Function> (currfuncval)->args())
 			iter_params++->value = &arg;
+
+		llvmsub = llvm::DISubprogram::get(*llvmctx, llvmcu->getFile(), currfunc->identifier, currfunc->linkage, llvmcu->getFile(), 0, nullptr, 0, nullptr, 0, 0, llvm::DINode::DIFlags::FlagZero, llvm::DISubprogram::toSPFlags(false, true, false), llvmcu);
 	}
 
 	splitbb("", 0);
@@ -4325,6 +3693,8 @@ DLL_EXPORT void endscope() {
 			endreturn({});
 		pcurrblock.pop_back();
 		fixuplabels();
+		currfunc = empty_func.begin();
+		llvmsub = nullptr;
 	}
 
 	//probemodule();
@@ -4739,21 +4109,6 @@ DLL_EXPORT void endfunctionparamdecl(std::unordered_map<unsigned, std::string>&&
 	functype.spec.func.bisvariadic = !hashes.contains("rest"_h);
 }
 
-/*DLL_EXPORT void continuedeclaration() {
-
-	auto lastvar = currtypevectorbeingbuild.back().p->back();
-
-	auto lastbasetype = lastvar.type.back();
-
-	assert(lastbasetype.uniontype == type::BASIC);
-
-	lastvar.type.clear();
-
-	lastvar.type.push_back(lastbasetype);
-
-	currtypevectorbeingbuild.back().p->push_back(lastvar);
-}*/
-
 DLL_EXPORT void addptrtotype(std::unordered_map<unsigned, std::string>&& hashes);
 
 DLL_EXPORT void endqualifs(std::unordered_map<unsigned, std::string>&& hashes) {
@@ -4773,8 +4128,9 @@ DLL_EXPORT void endqualifs(std::unordered_map<unsigned, std::string>&& hashes) {
 				if (refbasic[3].empty()) {
 					auto* reflaststruc = &*laststruc;
 					//if (!reflaststruc->back().pllvmtype) fixupstructype(reflaststruc);
-
-					lastvar.type.back().spec.basicdeclspec.pannonstruct = reflaststruc;
+					lastvar.type.back().spec.basicdeclspec.extra.~extra_basic_union();
+					new (lastvar.type.back().spec.basicdeclspec.extra.target_raw) annon_struc_mem{};
+					reinterpret_cast<annon_struc_mem*>(lastvar.type.back().spec.basicdeclspec.extra.target_raw)->annonstruct = *reflaststruc;
 				}
 		}
 		else if (0) {
@@ -4798,6 +4154,9 @@ DLL_EXPORT void announce_decl() {
 
 	if (pcurrblock.empty() && currtypevectorbeingbuild.back().currdecltype != currdecltypeenum::STRUCTORUNION
 		&& currtypevectorbeingbuild.back().currdecltype != currdecltypeenum::PARAMS) {
+		if (lastvar.linkage.empty()) {
+			lastvar.requestValue();
+		}
 		auto idtostore = callstring("getidtostor", lastvar.identifier.c_str(), lastvar.identifier.length());
 		assert(idtostore != -1);
 		auto vartopush = lastvar;
@@ -4950,13 +4309,27 @@ static THREAD_LOCAL decltype(enums)::value_type::iterator enumstopushlast;
 
 void llvminit_thread();
 
-
 DLL_EXPORT void llvminit() {
 	if(getenv("SILENT"))
 		std::cout.rdbuf(NULL);
 	if(getenv("INTPROM"))
 		allowccompat = atoi(getenv("INTPROM"));
+	if(getenv("DEBUG"))
+		allowdebug = atoi(getenv("DEBUG"));
 	//llvminit_thread();
+
+	static const char* inttynames[] = { "Int16", "Int32", "Int64", "Int128" };
+
+	const char** currtyname = inttynames;
+
+	for (auto pfun : std::array{ &getInt16Ty, &getInt32Ty, &getInt64Ty, &getInt128Ty })
+		if (const char* nbits = getenv(*currtyname++)) {
+			*pfun = getfnbynbits(atoi(nbits));
+		}
+
+	if (const char *triple = getenv("TRIPLE")) {
+		ptriple = new llvm::Triple{triple};
+	}
 }
 
 void llvminit_thread() {
@@ -5034,35 +4407,6 @@ DLL_EXPORT void flushfilescopes(unsigned n, unsigned id) {
 	//enumstopushlast = --enums.front().end();
 }
 
-DLL_EXPORT void consumefilescopes(unsigned id) {
-
-	auto finder =  [=] (auto &from) {
-		return std::find_if(
-			from.rbegin(), from.rend(),
-			[=](auto& param) { return param.first == id; });
-	};
-	
-	syncf.lock();
-
-	auto findconsscopes = finder(consumablescopevars);
-	auto findconsstrcs = finder(consumablestructorunionmembers);
-	auto findconsenms = finder(consumableenums);
-
-	splicethings(scopevar.front(), findconsscopes->second);
-	splicethings(structorunionmembers.front(), findconsstrcs->second);
-	//splicethings(enums.front(), findconsenms->second);
-
-	++findconsscopes == consumablescopevars.rend() ?
-		consumablescopevars.pop_front() : (void)consumablescopevars.erase(findconsscopes.base());
-
-	++findconsstrcs == consumablestructorunionmembers.rend() ?
-		consumablestructorunionmembers.pop_front() : (void)consumablestructorunionmembers.erase(findconsstrcs.base());
-
-	//++findconsenms == consumableenums.rend() ?
-	//	consumableenums.pop_front() : (void)consumableenums.erase(findconsenms.base());
-
-	syncf.unlock();
-}
 
 DLL_EXPORT void startmodule(const char* modulename, size_t szmodulename) {
 	/*pthread_mutexattr_init(&mutexsharedattr);
@@ -5076,22 +4420,28 @@ DLL_EXPORT void startmodule(const char* modulename, size_t szmodulename) {
 	static THREAD_LOCAL llvm::Module llvmmainmodobj{modname = std::string{modulename, szmodulename}, (*llvmctx)};
 	mainmodule = &llvmmainmodobj;
 
-	if(const char* datalayout = getenv("DATA_LAYOUT"))
-		pdatalayout = new llvm::DataLayout{ datalayout };
-	else
-		pdatalayout = new llvm::DataLayout{ mainmodule};
+	auto pdifile = llvm::DIFile::get(*llvmctx, std::string{modulename, szmodulename}, "");
 
-	static const char* inttynames[] = { "Int16", "Int32", "Int64", "Int128" };
-
-	const char** currtyname = inttynames;
-
-	for (auto pfun : std::array{ &getInt16Ty, &getInt32Ty, &getInt64Ty, &getInt128Ty })
-		if (const char* nbits = getenv(*currtyname++)) {
-			*pfun = getfnbynbits(atoi(nbits));
-		}
+	static THREAD_LOCAL llvm::DIBuilder llvmdibuilderobj{llvmmainmodobj};
+	llvmdibuilder = &llvmdibuilderobj;
+	
+	llvmcu = llvmdibuilder->createCompileUnit(llvm::dwarf::DW_LANG_C, llvmdibuilder->createFile(std::string{modulename, szmodulename}, ""), "regularc", false, "", 0);
 
 	(*llvmctx).setOpaquePointers(true);
-	mainmodule->setDataLayout(*pdatalayout);
+
+	if (ptriple)
+		mainmodule->setTargetTriple(ptriple->getTriple());
+
+	if (datalayout_str) {
+		pdatalayout = new llvm::DataLayout{ datalayout_str };
+		mainmodule->setDataLayout(*pdatalayout);
+	}
+	else {
+		pdatalayout = new llvm::DataLayout{mainmodule};
+	}
+
+	mainmodule->addModuleFlag(llvm::Module::Warning, "Debug Info Version",
+                           llvm::DEBUG_METADATA_VERSION);
 
 	/*if (const char* preplaypath = getenv("REPLAY")) {
 		std::ifstream replay{ preplaypath, std::ifstream::binary };
@@ -5195,6 +4545,7 @@ DLL_EXPORT void dumpmodule() {
 					outputll{ mainmodule->getName().str() + ".ll",
 								code, llvm::sys::fs::CD_CreateAlways };
 				if (!record.is_open()) {
+					llvmdibuilder->finalize();
 					mainmodule->print(outputll, nullptr);
 					llvm::WriteBitcodeToFile(*mainmodule, output);
 					//mainmodule->print(outputll, nullptr);
@@ -5353,61 +4704,6 @@ DLL_EXPORT void binary(std::unordered_map<unsigned, std::string>&& hashes) {
 	if (bIsBasicFloat(ops[0].type.front()) || bIsBasicFloat(ops[1].type.front()))
 		phndl->~basehndl(),
 		phndl = dynamic_cast<basehndl*>(new (phndl) handlefpexpr{});
-
-	//if(phndl->opbbs.back().second.pValue)
-	//phndl->endlast(phndl->opbbs.back().first, phndl->opbbs.back().second);
-
-	/*switch (stringhash(imm.c_str())) {
-	case "*"_h:
-	case "/"_h:
-	case "%"_h:
-	case "+"_h:
-	case "-"_h:
-	case ">"_h:
-	case "<"_h:
-	case "<="_h:
-	case ">="_h:
-	case "=="_h:
-	case "!="_h:
-	case "&"_h:
-	case "^"_h:
-	case "|"_h:
-	{
-		auto ops = std::array{ *----phndl->immidiates.end(), phndl->immidiates.back() };
-
-		//phndl->usualarithmeticconversions(ops);
-
-		if (bIsBasicFloat(ops[0].type.front()) || bIsBasicFloat(ops[1].type.front()))
-			phndl = &hndlfpexpr;
-
-		//phndl->immidiates.back() = ops[1];
-		//*----phndl->immidiates.end() = ops[0];
-		break;
-	}
-	case ">>"_h:
-	case "<<"_h:
-	{
-		auto ops = std::array{ *----phndl->immidiates.end(), phndl->immidiates.back() };
-
-		ops[0] = phndl->integralpromotions(ops[0]);
-
-		ops[1] = phndl->integralpromotions(ops[1]);
-
-		if (ops[1].type.front().uniontype == type::BASIC &&
-			ops[0].value->getType() != ops[1].value->getType())
-			ops[1].type = ops[0].type,
-			ops[1].value = phndl->CreateCastInst(
-				ops[1].value, ops[0].value->getType(),
-				ops[0].type.back().spec.basicdeclspec.basic[0] != "unsigned");
-
-		phndl->immidiates.back() = ops[1];
-		*----phndl->immidiates.end() = ops[0];
-		break;
-	}
-	case "="_h:
-
-		break;
-	}*/
 
 	const char* inttoins = "";
 	bool bislogicaland;
@@ -5589,121 +4885,6 @@ void do_print_layour() {
 		print_tabs(n++), printf(" %s\n", patt.first.c_str());
 }
 
-//std::aligned_storage_t<sizeof(destr_clear_qualifsandtypes), alignof(destr_clear_qualifsandtypes)> unincompilingobj;
-
-//auto pcompiling = new (&unincompilingobj) bindings_compiling{};
-#if 0
-DLL_EXPORT const char* callout_test(const char** pargs, size_t* szargs) {
-	bindings_payload paylod = { .pargs = pargs, .szargs = szargs }; //= { (calloutinfo*)b, a };
-	//struct calloutinfo* ptable = (calloutinfo*)b;
-
-	static std::string res = "";
-
-	//std::aligned_storage_t<sizeof(destr_clear_qualifsandtypes), alignof(destr_clear_qualifsandtypes)> uninparsingobj;
-
-	//auto pbindings = new (&uninparsingobj) bindings_parsing{};
-
-	//(bindings_payload&)*pbindings = paylod;
-	(bindings_payload&)*phndl = paylod;
-
-	int calloutnum = strtoull(std::string{ pargs[0], szargs[0] }.c_str(), nullptr, 10);
-
-	//printf2("callout %d\n", a->callout_number);
-
-#ifdef _WIN32
-	__try {
-#else
-	try {
-#endif
-		//if (a->callout_number != 255)
-		//(((parsing_plain&)*pbindings).lpVtbl->vtbl[calloutnum](pbindings, res)),
-		(((compiling_plain&)*phndl).lpVtbl->vtbl[calloutnum - 1](phndl), 0);
-	}
-#ifdef _WIN32
-	__except (EXCEPTION_EXECUTE_HANDLER) {
-		//goto dump;
-	}
-#else
-	catch (...) {
-		goto dump;
-	}
-#endif
-	//pbindings->cleanup();
-
-	//if(a->capture_top > 1)
-	//	printf2("%.*s\n", GROUP_SZ_AND_PTR_TRUNC(a->capture_top - 1));
-	return res.c_str();
-#if 0
-	if (PATTERN_FLAGS & PCRE2_AUTO_CALLOUT) dump: {
-		//do_print_layour();
-		printf("%.*s @ %zu\n", a->next_item_length, ptable->pattern + a->pattern_position, a->pattern_position);
-
-		std::string next_item{ (char*)ptable->pattern + a->pattern_position, a->next_item_length };
-
-		/*if (lastoffsetvector != a->offset_vector)
-			if (!recursion_list.empty() && recursion_list.back().second == a->offset_vector)
-				recursion_list.pop_back();
-			else
-				recursion_list.push_back({ next_item, a->offset_vector });
-		//else if (next_item == (")"))
-			//recursion_list.pop_back();
-			/*for (auto pattiter = recursion_list.begin(); pattiter != recursion_list.end(); ++pattiter)
-			if (pattiter->second == a->capture_top) {
-				recursion_list.erase(pattiter, recursion_list.end());
-				break;
-			}*/
-
-			//lasttop = a->capture_top;
-
-		lastoffsetvector = a->offset_vector;
-
-		std::string subjtoprint{ (char*)a->subject + a->current_position, (a->subject_length - a->current_position) & 0xFF };
-
-		std::replace_if(subjtoprint.begin(), subjtoprint.end(), isspace, ' ');
-
-		printf("%.*s\n", (unsigned int)subjtoprint.length(), subjtoprint.c_str());
-
-#if PATTERN_FLAGS & PCRE2_AUTO_CALLOUT
-		static unsigned long long currregion;
-		printf1p3("#region %llu capture %d\n", currregion, a->callout_number);
-		currregion++;
-		for (int n = 0; n < a->capture_top; ++n)
-			subjtoprint.assign((char*)a->subject + a->offset_vector[2 * n],
-				(unsigned int)(a->offset_vector[2 * n + 1] - a->offset_vector[2 * n])),
-			std::replace_if(subjtoprint.begin(), subjtoprint.end(), isspace, ' '),
-			printf3(
-				"%s %d - %s\n",
-				getnameloc(-n, *ptable),
-				n,
-				subjtoprint.c_str());
-		printf1p3("#endregion\n", 0);
-#else
-		__debugbreak();
-#endif
-	}
-	return res;
-#endif
-	}
-#endif
-
-#if 0
-virtual void escape_1() {
-	//int n = getnameloc("escaperaw", *ptable);
-	addescapesequencetostring(FIRST_ARG_PTR_AND_SZ);
-
-}
-virtual void text_2() {
-	//int n = getnameloc("textraw", *ptable);
-	addplaintexttostring(FIRST_ARG_PTR_AND_SZ);
-
-}
-virtual void unused_3() { };
-virtual void start_str_4() {
-	//int n = getnameloc2("begincharliteral", *ptable, a, 0);
-	bischarlit = this->szargs[1];//n != -1 && a->offset_vector[n * 2] != -1;
-	//a->offset_vector[n * 2] = a->offset_vector[n * 2 + 1] = -1;
-}
-#endif
 DLL_EXPORT void num_lit(std::unordered_map<unsigned, std::string> &hashes) {
 	unsigned int type;
 	//int n = getnameloc("numberliteralraw", *ptable);
@@ -5735,93 +4916,6 @@ DLL_EXPORT void num_lit(std::unordered_map<unsigned, std::string> &hashes) {
 	}
 
 }
-#if 0
-virtual void ident_6() {
-	//int n = getnameloc("ident", *ptable);
-	obtainvalbyidentifier({ FIRST_ARG_PTR_AND_SZ });
-
-}
-virtual void start_fn_call_7() { startfunctioncall(); }
-virtual void member_access_op_8() {
-	//int n = getnameloc("ident", *ptable), ntoprint[2];
-	//ntoprint[1] = getnameloc("arrowordotraw", *ptable) + 1;
-	memberaccess(PTR_AND_SZ_N(2), PTR_AND_SZ_N(1));//(char*)GROUP_PTR_AND_SZ(ntoprint[1]), (char*)GROUP_PTR_AND_SZ(n + 1));
-
-}
-virtual void postfix_arith_9() {
-	//int n = getnameloc("postfixarithraw", *ptable);
-	unaryincdec(FIRST_ARG_PTR_AND_SZ, true);
-
-}
-virtual void prefix_arith_10() {
-	//int n = getnameloc("prefixarithraw", *ptable);
-	unaryincdec(FIRST_ARG_PTR_AND_SZ, false);
-
-}
-virtual void decl_ptr_11() {
-	//int n = (getnameloc2("qualif", *ptable, a, 1));
-
-	//n { };
-
-	addptrtotype(FIRST_ARG_PTR_AND_SZ);
-
-}
-virtual void decl_subs_12() {  }
-virtual void end_fn_call_13() { endfunctioncall(); }
-virtual void unexplored_end_sizeof_14() {  }
-virtual void begin_sizeof_15() {  }
-virtual void unused_16() { };
-virtual void unused_17() { };
-virtual void unused_18() { };
-virtual void unary_op_19() {
-	//int n = getnameloc("unop", *ptable);
-	unary(FIRST_ARG_PTR_AND_SZ);//(char*)GROUP_PTR_AND_SZ(n + 1));
-
-}
-
-virtual void or_logic_op_29() {
-	//int n = getnameloc3("binoplast", *ptable, a, 1, { .rev = 0, .last = 0, .dontsearchforclosest = 0, });
-	//if (n != -1 && a->offset_vector[2 * (n + 1)] != -1)
-	binary(FIRST_ARG_PTR_AND_SZ);//(char*)GROUP_PTR_AND_SZ(n + 1));
-	//ntoclearauto[0] = n + 1;
-
-}
-virtual void assign_op_30() {
-	//BINARY_OP("assignopraw");
-	binary(FIRST_ARG_PTR_AND_SZ);//(char*)GROUP_PTR_AND_SZ(n + 1));
-
-}
-virtual void unused_31() { };
-virtual void ternary_true_32() {  }
-virtual void ternary_33() {  }
-virtual void ternary_false_34() {  }
-virtual void comma_op_35() {  }
-virtual void unused_36() { };
-virtual void unused_37() { };
-/*void handledeclident(const std::string contentstr) {[
-	if (contentstr.empty()) return;
-	//int n = getnameloc2("typedefkeyword", *ptable, a, 0);
-
-	auto c_strcontentstr = contentstr.c_str();
-
-	if (auto pvar = obtainvalbyidentifier(contentstr, false))
-		if (pvar->type.back().spec.basicdeclspec.basic[2] == "typedef")
-			if (currdeclspectypedef.empty()) currdeclspectypedef = contentstr; else goto adddecl;
-		else;
-	else adddecl: adddeclarationident(contentstr.c_str(), contentstr.size(), false);//a->offset_vector[2 * n] != -1);
-}*/
-virtual void identifier_typedef_38() {
-	//int n = getnameloc("identifierminetypedef", *ptable) + 1;
-
-	//currdeclspectypedef = { (char*)GROUP_PTR_AND_SZ(n) };
-
-	//handledeclident({ (char*)GROUP_PTR_AND_SZ(n) });
-}
-#endif
-
-/*DLL_EXPORT void add_typedef_to_decl(std::unordered_map<unsigned, std::string>&& hashes) {
-	currtypevectorbeingbuild.back().p->back().type.front().spec.basicdeclspec.basic[3] = hashes["typedefnmmatched"_h];
-}*/
 
 DLL_EXPORT void identifier_decl(std::unordered_map<unsigned, std::string> && hashes) {
 	//int n = getnameloc("ident", *ptable) + 1;
@@ -5859,47 +4953,7 @@ DLL_EXPORT void identifier_decl(std::unordered_map<unsigned, std::string> && has
 
 	currtypevectorbeingbuild.back().p->push_back(var);
 }
-#if 0
-virtual void start_constant_expr_40() {
-	beginconstantexpr();
 
-}
-virtual void end_decl_sub_41() {
-	addsubtotype();
-	endconstantexpr();
-
-}
-virtual void end_full_decl_42() {
-	//isinsidedecl = false;
-	//typedefname[0] = typedefname[1] = -1;
-	finalizedeclaration();
-
-}
-virtual void extend_decl_43() {
-	continuedeclaration();
-
-}
-virtual void start_new_scope_44() {
-	//szscopeleveltoadd++;
-	//addtypedefsscope();
-	beginscope();
-
-}
-virtual void end_of_scope_45() {
-	endscope();
-
-}
-virtual void unexplored_46() {  }
-virtual void begin_param_list_47() {
-	startfunctionparamdecl();
-
-}
-virtual void end_param_list_48() {
-	//int n = getnameloc3("rest", *ptable, a, 0, { .dontsearchforclosest = 0 });
-	endfunctionparamdecl(this->szargs[1]);
-
-}
-#endif
 DLL_EXPORT void add_type(std::unordered_map<unsigned, std::string>&hashes) {
 	auto& lastvar = currtypevectorbeingbuild.back().p->back();
 	parsebasictypenspecs({ hashes["typefound"_h] }, lastvar);
@@ -5945,45 +4999,7 @@ DLL_EXPORT void add_literal(std::unordered_map<unsigned, std::string> &hashes) {
 		currstring = "";
 	}
 }
-#if 0
-virtual void finish_return_statement_52() {
-	endreturn();
 
-}
-virtual void finish_statement_53() {
-	endexpression();
-
-}
-virtual void subscript_op_54() {
-	subscript();
-
-}
-virtual void decl_begin_55() {
-	//int n = getnameloc3("typedefnmmatched", *ptable, a, 0, { .rev = 0, .last = 0, .dontsearchforclosest = 0, });
-
-	//std::string identtypedef{ (char*)GROUP_PTR_AND_SZ(n) };
-	startdeclaration({ FIRST_ARG_PTR_AND_SZ });
-
-}
-virtual void end_of_sizeof_56() {
-	endsizeofexpr();
-
-}
-virtual void end_of_sizeof_tp_nm_57() {
-	endsizeoftypename();
-
-}
-virtual void ident_struc_58() {
-	const char* namedcapture;
-	int ntoprint[2];
-	//int n = getnameloc(namedcapture = "ident", *ptable);
-	//ntoprint[1] = getnameloc(namedcapture = "structorunionlast", *ptable) + 1;
-	currstruct.first = { PTR_AND_SZ_N(1) };
-	currstruct.second = { PTR_AND_SZ_N(2) };
-
-
-	}
-#endif
 DLL_EXPORT void struc_or_union_body(std::unordered_map<unsigned, std::string> &hashes) {
 	//auto& lastvar = currtypevectorbeingbuild.back().p->back();
 
@@ -5997,35 +5013,7 @@ DLL_EXPORT void struc_or_union_body(std::unordered_map<unsigned, std::string> &h
 	currtypevectorbeingbuild.push_back(
 		{ --structorunionmembers.back().end(), currdecltypeenum::STRUCTORUNION });
 }
-#if 0
-virtual void struc_or_union_body_end_60() {
-	endbuildingstructorunion();
 
-}
-virtual void perform_explicit_conversion_61() {
-	applycast();
-
-}
-virtual void create_label_62() {
-	//const char* namedcapture;
-	//int n = getnameloc(namedcapture = "lbl", *ptable);
-	splitbb(FIRST_ARG_PTR_AND_SZ);//(char*)GROUP_PTR_AND_SZ(n + 1));
-
-}
-virtual void goto_stmt_63() {
-	//const char* namedcapture;
-	//int n = getnameloc(namedcapture = "gtid", *ptable);
-	gotolabel(FIRST_ARG_PTR_AND_SZ);//(char*)GROUP_PTR_AND_SZ(n + 1));
-
-}
-virtual void switch_stmt_64() { startswitch(); }
-virtual void create_case_65() {
-	addCase();
-	endconstantexpr();
-}
-virtual void switch_stmt_end_66() { endswitch(); }
-virtual void create_default_case_67() { addDefaultCase(); }
-#endif
 const llvm::fltSemantics& getfltsemfromtype(::type flttype) {
 	return flttype.spec.basicdeclspec.basic[1] == "double" ?
 		flttype.spec.basicdeclspec.longspecsn == 1 ? llvm::APFloatBase::PPCDoubleDouble()
@@ -6088,32 +5076,7 @@ rest:
 
 	immidiates.push_back({ currtype, pconstant });
 }
-#if 0
-virtual void finish_float_literal_69() {
-	//int ntoclear = getnameloc2("flt", *ptable, a, 0);
 
-	insertfloattoimm(FIRST_ARG_PTR_AND_SZ, (char*)STRING_TO_PTR_AND_SZ(fltlitctx.wholepart),
-		(char*)STRING_TO_PTR_AND_SZ(fltlitctx.fractionpart),
-		(char*)STRING_TO_PTR_AND_SZ(fltlitctx.exponent),
-		(char*)STRING_TO_PTR_AND_SZ(fltlitctx.exponent_sign));
-
-	fltlitctx.~decltype(fltlitctx)();
-	new (&fltlitctx) decltype(fltlitctx)();
-}
-virtual void begin_if_stm_70() { startifstatement(); }
-virtual void cnt_if_stm_71() { continueifstatement(); }
-virtual void finish_if_stm_72() { endifstatement(); }
-virtual void begin_loop_73() { startforloopcond(); }
-virtual void loop_iter_74() { addforloopiter(); }
-virtual void finish_loop_75() { endforloop(); }
-virtual void cond_loop_76() { endforloopcond(); }
-virtual void begin_do_while_77() { startdowhileloop(); }
-virtual void finish_do_while_78() { enddowhileloop(); }
-virtual void finish_continue_stm_79() { addcontinue(); }
-virtual void finish_break_stm_80() { addbreak(); }
-virtual void register_calling_conv_81() { }
-virtual void unexplored_82() { }
-#endif
 DLL_EXPORT void end_binary() {
 	phndl->end_binary();
 }
@@ -6123,11 +5086,7 @@ DLL_EXPORT void begin_branch() {
 DLL_EXPORT void begin_binary() {
 	phndl->begin_binary();
 }
-#if 0
-virtual void unused_86() { }
-virtual void begin_nested_expr_87() { }
-virtual void end_nested_expr_88() { }
-#endif
+
 DLL_EXPORT void add_ident_to_enum_def(std::unordered_map<unsigned, std::string> &hashes) {
 	var tmp;
 	type enumtype{ type::BASIC };
@@ -6182,11 +5141,18 @@ DLL_EXPORT void end_without_ass_to_enum_def() {
 	announce_enum_def();
 }
 
-DLL_EXPORT void global_han(const char* fnname, std::unordered_map<unsigned, std::string> && hashes) {
+DLL_EXPORT void global_han(const char* fnname, std::unordered_map<unsigned, std::string> && hashes, void(*pfunc)(...)) {
 	if (binabrupt) {
 		if (std::string{ fnname } == "endfndef") {
 			binabrupt = false;
 		}
+	}
+
+	if (allowdebug && llvmbuilder && pfunc && llvmsub) {
+		llvmbuilder->SetCurrentDebugLocation(llvm::DILocation::get(*llvmctx, 0, evalperlexpruv("pos()"), llvmsub));
+	}
+	else {
+		llvmbuilder->SetCurrentDebugLocation({});
 	}
 }
 #if 0
@@ -6253,22 +5219,6 @@ static std::list<std::pair<std::unordered_map<unsigned, std::string>, std::strin
 
 extern "C" THREAD_LOCAL_C unsigned int matchpos;
 
-
-DLL_EXPORT void updateavailidents(HV * hash) {
-
-	char* key;
-	I32 key_length;
-	U32 nid;
-	SV* value;
-	hv_iterinit(hash);
-	const char nill[1] = { '\0' };
-	while (value = hv_iternextsv(hash, &key, &key_length)) {
-		nid = SvUV(value);
-		std::string keyval = std::string{key, (size_t)key_length}.c_str();
-		if (!id2dmap.contains(keyval))
-			id2dmap.insert({ keyval, nid });
-		}
-}
 
 namespace callout_namespace {
 

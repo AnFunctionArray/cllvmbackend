@@ -64,14 +64,6 @@ CODE:
 OUTPUT:
       RETVAL
 
-
-void
-updateavailidents1(HV *hash)
-CODE:
-    {
-        updateavailidents(hash);
-    }
-
 void
 initthread1(U32 baseposarg)
 CODE:
@@ -80,16 +72,6 @@ CODE:
         //printf("print digit %d\n", baseposarg);
 	    basepos = baseposarg;
 	    initthread();
-    }
-
-void
-consumefilescopes1(U32 id)
-CODE:
-    {
-        //extern __thread U32 matchpos, basepos;
-        //printf("print digit %d\n", baseposarg);
-	    //basepos = baseposarg;
-	    consumefilescopes(id);
     }
 
 void

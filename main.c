@@ -250,8 +250,8 @@ struct retgetnamevalue getnamevalue(const char* nametoget) {
 
 XS__startmatching(), XS__callout(), XS__startmodule(), boot_DynaLoader(), endmodule()
 , XS__initthread1(), waitforthread(), preparethread(), XS__startmetaregex(), dumpabrupt(),
-endmoduleabrupt(), dumpmodule(), XS__flushfilescopes1(), XS__consumefilescopes1(),
-XS__registerthread1(), XS__broadcast1(), resetbufferthr(), XS__updateavailidents1(), reset_state();
+endmoduleabrupt(), dumpmodule(),
+XS__registerthread1(), XS__broadcast1(), reset_state();
 
 static void
 xs_init(pTHX)
@@ -268,12 +268,9 @@ xs_init(pTHX)
 	//newXS("preparethread", preparethread, __FILE__);
 	newXS("waitforthread", waitforthread, __FILE__);
 	newXS("startmodule", XS__startmodule, __FILE__);
-	newXS("flushfilescopes", XS__flushfilescopes1, __FILE__);
-	newXS("consumefilescopes", XS__consumefilescopes1, __FILE__);
 	newXS("registerthread", XS__registerthread1, __FILE__);
 	newXS("broadcast", XS__broadcast1, __FILE__);
 	//newXS("resetbuffer", resetbufferthr, __FILE__);
-	newXS("updateavailidents", XS__updateavailidents1, __FILE__);
 	newXS("reset_state", reset_state, __FILE__);
 }
 
@@ -521,7 +518,7 @@ U32 docall(const char *name, size_t szname, void *phashmap) {
 
 	extern void global_han();
 
-	global_han(cProcName, phashmap);
+	global_han(cProcName, phashmap, pfunc);
 
 	if (!pfunc) return 0;
 	areweinuser = 1;
