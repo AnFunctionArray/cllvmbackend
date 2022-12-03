@@ -3114,7 +3114,7 @@ void pushsizeoftype(val&& value) {
 		val{ std::list{basicsz()},
 		llvm::ConstantInt::getIntegerValue(
 				pdatalayout->getPointerSizeInBits() == 64 ? getInt64Ty((*llvmctx)) : getInt32Ty((*llvmctx)),
-				llvm::APInt{64, szoftype}),
+				llvm::APInt{pdatalayout->getPointerSizeInBits(), szoftype}),
 			"[[sizeoftypename]]" });
 }
 
