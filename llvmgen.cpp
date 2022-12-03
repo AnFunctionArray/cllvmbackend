@@ -3627,7 +3627,7 @@ DLL_EXPORT void beginscope() {
 		for (auto& arg : dyn_cast<llvm::Function> (currfuncval)->args())
 			iter_params++->value = &arg;
 
-		llvmsub = llvm::DISubprogram::get(*llvmctx, llvmcu->getFile(), currfunc->identifier, currfunc->linkage, llvmcu->getFile(), 0, nullptr, 0, nullptr, 0, 0, llvm::DINode::DIFlags::FlagZero, llvm::DISubprogram::toSPFlags(false, true, false), llvmcu);
+		llvmsub = llvm::DISubprogram::getDistinct(*llvmctx, llvmcu->getFile(), currfunc->identifier, currfunc->linkage, llvmcu->getFile(), 0, nullptr, 0, nullptr, 0, 0, llvm::DINode::DIFlags::FlagZero, llvm::DISubprogram::toSPFlags(false, true, false), llvmcu);
 	}
 
 	splitbb("", 0);
