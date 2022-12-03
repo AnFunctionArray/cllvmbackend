@@ -2934,11 +2934,14 @@ DLL_EXPORT void endqualifs(std::unordered_map<unsigned, std::string>&& hashes);
 THREAD_LOCAL static std::list<std::list<var>>::iterator laststruc;
 
 DLL_EXPORT void check_stray_struc() {
+	// Currently we only care about nested structures or unions
+	if (currtypevectorbeingbuild.back().currdecltype != currdecltypeenum::STRUCTORUNION) {
+		return;
+	}
 	auto& lastmembers = *laststruc;
 	auto& structvar = lastmembers.front();
 
-	if (structvar.identifier.empty()
-		&& currtypevectorbeingbuild.back().currdecltype == currdecltypeenum::STRUCTORUNION) {
+	if (structvar.identifier.empty()) {
 		currtypevectorbeingbuild.back().p->push_back(structvar);
 		currtypevectorbeingbuild.back().p->back().type.front().spec.basicdeclspec.extra.~extra_basic_union();
 		new (currtypevectorbeingbuild.back().p->back().type.front().spec.basicdeclspec.extra.target_raw) annon_struc_mem{};
@@ -4426,7 +4429,7 @@ DLL_EXPORT void startmodule(const char* modulename, size_t szmodulename) {
 	static THREAD_LOCAL llvm::DIBuilder llvmdibuilderobj{llvmmainmodobj};
 	llvmdibuilder = &llvmdibuilderobj;
 	
-	llvmcu = llvmdibuilder->createCompileUnit(llvm::dwarf::DW_LANG_C, llvmdibuilder->createFile(std::string{modulename, szmodulename}, "/"), "regularc", false, "", 0);
+	llvmcu = llvmdibuilder->createCompileUnit(llvm::dwarf::DW_LANG_C99, llvmdibuilder->createFile(std::string{modulename, szmodulename}, "/"), "regularc", false, "", 0);
 
 	(*llvmctx).setOpaquePointers(true);
 
