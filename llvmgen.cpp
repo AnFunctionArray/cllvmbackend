@@ -3627,7 +3627,8 @@ DLL_EXPORT void beginscope() {
 		for (auto& arg : dyn_cast<llvm::Function> (currfuncval)->args())
 			iter_params++->value = &arg;
 
-		llvmsub = llvm::DISubprogram::getDistinct(*llvmctx, llvmcu->getFile(), currfunc->identifier, currfunc->linkage, llvmcu->getFile(), 0, nullptr, 0, nullptr, 0, 0, llvm::DINode::DIFlags::FlagZero, llvm::DISubprogram::toSPFlags(false, true, false), llvmcu);
+		llvmsub = llvmdibuilder->createFunction(llvmcu->getFile(), currfunc->identifier, currfunc->linkage, llvmcu->getFile(), evalperlexpruv("pos()"), nullptr, evalperlexpruv("pos()"), llvm::DINode::DIFlags::FlagZero, llvm::DISubprogram::toSPFlags(false, true, false));
+			//llvm::DISubprogram::getDistinct(*llvmctx, llvmcu->getFile(), currfunc->identifier, currfunc->linkage, llvmcu->getFile(), 0, nullptr, 0, nullptr, 0, 0, llvm::DINode::DIFlags::FlagZero, llvm::DISubprogram::toSPFlags(false, true, false), llvmcu);
 	}
 
 	splitbb("", 0);
@@ -4425,7 +4426,7 @@ DLL_EXPORT void startmodule(const char* modulename, size_t szmodulename) {
 	static THREAD_LOCAL llvm::DIBuilder llvmdibuilderobj{llvmmainmodobj};
 	llvmdibuilder = &llvmdibuilderobj;
 	
-	llvmcu = llvmdibuilder->createCompileUnit(llvm::dwarf::DW_LANG_C, llvmdibuilder->createFile(std::string{modulename, szmodulename}, ""), "regularc", false, "", 0);
+	llvmcu = llvmdibuilder->createCompileUnit(llvm::dwarf::DW_LANG_C, llvmdibuilder->createFile(std::string{modulename, szmodulename}, "/"), "regularc", false, "", 0);
 
 	(*llvmctx).setOpaquePointers(true);
 
@@ -4442,6 +4443,8 @@ DLL_EXPORT void startmodule(const char* modulename, size_t szmodulename) {
 
 	mainmodule->addModuleFlag(llvm::Module::Warning, "Debug Info Version",
                            llvm::DEBUG_METADATA_VERSION);
+
+	mainmodule->addModuleFlag(llvm::Module::Warning, "Dwarf Version", llvm::dwarf::DWARF_VERSION);
 
 	/*if (const char* preplaypath = getenv("REPLAY")) {
 		std::ifstream replay{ preplaypath, std::ifstream::binary };
@@ -4666,7 +4669,8 @@ DLL_EXPORT void unaryincdec(std::unordered_map<unsigned, std::string>&& hashes) 
 
 	auto immvalue_non_modified = immidiates.back();
 
-	if (immvalue_non_modified.type.front().uniontype != type::POINTER)
+	if (immvalue_non_modified.type.front().uniontype != type::POINTER &&
+		!bIsBasicFloat(immvalue_non_modified.type.front()))
 
 		immidiates.back() = phndl->requireint(immvalue_non_modified);
 
