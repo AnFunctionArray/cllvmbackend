@@ -3630,8 +3630,9 @@ DLL_EXPORT void beginscope() {
 		for (auto& arg : dyn_cast<llvm::Function> (currfuncval)->args())
 			iter_params++->value = &arg;
 
-		llvmsub = llvmdibuilder->createFunction(llvmcu->getFile(), currfunc->identifier, currfunc->linkage, llvmcu->getFile(), evalperlexpruv("pos()"), nullptr, evalperlexpruv("pos()"), llvm::DINode::DIFlags::FlagZero, llvm::DISubprogram::toSPFlags(false, true, false));
+		llvmsub = llvmdibuilder->createFunction(llvmcu->getFile(), currfunc->identifier, currfunc->linkage, llvmcu->getFile(), evalperlexpruv("pos()"), llvm::DISubroutineType::get(*llvmctx, llvm::DINode::DIFlags::FlagZero, llvm::dwarf::CallingConvention::DW_CC_normal, llvm::DITypeRefArray{}), evalperlexpruv("pos()"), llvm::DINode::DIFlags::FlagZero, llvm::DISubprogram::toSPFlags(false, true, false));
 			//llvm::DISubprogram::getDistinct(*llvmctx, llvmcu->getFile(), currfunc->identifier, currfunc->linkage, llvmcu->getFile(), 0, nullptr, 0, nullptr, 0, 0, llvm::DINode::DIFlags::FlagZero, llvm::DISubprogram::toSPFlags(false, true, false), llvmcu);
+		dyn_cast<llvm::Function> (currfuncval)->setSubprogram(llvmsub);
 	}
 
 	splitbb("", 0);
@@ -4429,7 +4430,7 @@ DLL_EXPORT void startmodule(const char* modulename, size_t szmodulename) {
 	static THREAD_LOCAL llvm::DIBuilder llvmdibuilderobj{llvmmainmodobj};
 	llvmdibuilder = &llvmdibuilderobj;
 	
-	llvmcu = llvmdibuilder->createCompileUnit(llvm::dwarf::DW_LANG_C99, llvmdibuilder->createFile(std::string{modulename, szmodulename}, "/"), "regularc", false, "", 0);
+	llvmcu = llvmdibuilder->createCompileUnit(llvm::dwarf::DW_LANG_C, llvmdibuilder->createFile(std::string{modulename, szmodulename}, "/"), "regularc", false, "", 0);
 
 	(*llvmctx).setOpaquePointers(true);
 
@@ -4447,7 +4448,7 @@ DLL_EXPORT void startmodule(const char* modulename, size_t szmodulename) {
 	mainmodule->addModuleFlag(llvm::Module::Warning, "Debug Info Version",
                            llvm::DEBUG_METADATA_VERSION);
 
-	mainmodule->addModuleFlag(llvm::Module::Warning, "Dwarf Version", llvm::dwarf::DWARF_VERSION);
+	//mainmodule->addModuleFlag(llvm::Module::Warning, "Dwarf Version", llvm::dwarf::DWARF_VERSION);
 
 	/*if (const char* preplaypath = getenv("REPLAY")) {
 		std::ifstream replay{ preplaypath, std::ifstream::binary };
@@ -5156,7 +5157,7 @@ DLL_EXPORT void global_han(const char* fnname, std::unordered_map<unsigned, std:
 	}
 
 	if (allowdebug && llvmbuilder && pfunc && llvmsub) {
-		llvmbuilder->SetCurrentDebugLocation(llvm::DILocation::get(*llvmctx, 0, evalperlexpruv("pos()"), llvmsub));
+		llvmbuilder->SetCurrentDebugLocation(llvm::DILocation::get(*llvmctx, evalperlexpruv("pos()"), 0, llvmsub));
 	}
 	else {
 		llvmbuilder->SetCurrentDebugLocation({});
