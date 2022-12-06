@@ -726,17 +726,20 @@ void parsebasictypenspecs(const std::list<std::string>& qualifs, ::var& outvar) 
 		switch (stringhash(a.c_str())) {
 		case "unsigned"_h:
 		case "signed"_h:
+			if (ret.basic[1].empty())
+				ret.basic[1] = "int";
 			ret.basic[0] = a;
 			break;
 		case "long"_h:
 			ret.longspecsn++;
+			ret.basic[1] = a;
+			break;
+		case "int"_h:
 			if (ret.basic[1].empty())
 				ret.basic[1] = a;
 			break;
 		//case "void"_h:
 		case "_Bool"_h:
-		case "__int64"_h:
-		case "int"_h:
 		case "short"_h:
 		case "char"_h:
 		case "float"_h:
@@ -2046,7 +2049,9 @@ struct handlecnstexpr : handlefpexpr {
 
 	virtual void init_end() override {
 		adjus_aggregate_n_elems_if_needed();
-		addvar(currtypevectorbeingbuild.back().p->back(), ::immidiates.back().constant);
+		auto &targtvar = currtypevectorbeingbuild.back().p->back();
+		auto resconst = convertTo(::immidiates.back(), targtvar.type);
+		addvar(targtvar, resconst.constant);
 	}
 
 	virtual val convertTo(val target, std::list<::type> to, bool bdecay = true) override {
