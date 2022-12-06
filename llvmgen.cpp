@@ -483,7 +483,7 @@ struct type {
 		void strip();
 
 		std::list<std::list<var>> parametertypes_list{ 1 };
-		bool bisvariadic;
+		bool bisvariadic = false;
 		std::string callconv;
 	};
 
@@ -599,7 +599,7 @@ const ::type basiclong = []() {
 	return tmp;
 }();
 
-llvm::Type* buildllvmtypefull(std::list<type>& decltypevector);
+llvm::Type* buildllvmtypefull(std::list<type>& decltypevector, bool ptrdeep = false);
 
 llvm::Type* buildllvmtypefull(std::list<type>&& decltypevector) {
 	return buildllvmtypefull(reinterpret_cast<std::list<type> &>(std::move(decltypevector)));
@@ -1677,21 +1677,16 @@ struct basehndl /* : bindings_compiling*/ {
 					immidiates.erase(----immidiates.end(), immidiates.end());
 					bool isarray = ops[i].type.front().uniontype == type::ARRAY;
 					auto& targetplain = ops[i];
-					llvm::Type* targettype = targetplain.requestType();
+					llvm::Type* targettype = buildllvmtypefull(targetplain.type, true);
 					llvm::Value* target = isarray ? targetplain.lvalue : targetplain.value;
 					std::vector<llvm::Value*> gepinidces{ ops[!i].value };
 
-					if (isarray)
-						gepinidces.insert(gepinidces.begin(), dyn_cast<llvm::Value>(llvmbuilder->getInt32(0)));
-					//	targettype = targettype->getPointerTo();
-					else 
-						targettype = ops[i].requestType();
-					
 					ops[i].type.erase(ops[i].type.begin());
 
-					if(!ops[i].type.front().cachedtype) {
-						ops[i].requestType();
-					}
+					gepinidces.insert(gepinidces.begin(), dyn_cast<llvm::Value>(llvmbuilder->getInt32(0)));
+
+					if (!isarray)
+						targettype = llvm::ArrayType::get(ops[i].type.front().cachedtype, 0);
 					
 					assert(!targettype->isFunctionTy());
 
@@ -2880,8 +2875,21 @@ void addvar(var& lastvar, llvm::Constant* pInitializer) {
 				nullptr,
 				lastvar.identifier));
 
+			std::string type_str;
+			llvm::raw_string_ostream rso(type_str);
+			lastvar.pllvmtype->print(rso);
+
+			auto dibasicty = llvmdibuilder->createArrayType(0, 0, llvmdibuilder->createBasicType(rso.str(), pdatalayout->getTypeStoreSizeInBits(lastvar.pllvmtype), llvm::dwarf::getAttributeEncoding("DW_ATE_unsigned_char")), {});
+
 			if(lastvar.linkage.empty()) {
+				
+				llvmdibuilder->createGlobalVariableExpression(llvmcu->getFile(), lastvar.identifier, lastvartypestoragespec, llvmcu->getFile(), evalperlexpruv("pos()"), 
+				dibasicty, false);
 				dyn_cast<llvm::GlobalVariable>(lastvar.value)->setInitializer(pInitializer ? pInitializer : llvm::Constant::getNullValue(typevar));
+			}
+			else {
+				llvmdibuilder->createTempGlobalVariableFwdDecl(llvmcu->getFile(), lastvar.identifier, lastvartypestoragespec, llvmcu->getFile(), evalperlexpruv("pos()"),
+				dibasicty, false);
 			}
 			// scopevar.front ().push_back (lastvar);
 			break;
@@ -2923,6 +2931,13 @@ void addvar(var& lastvar, llvm::Constant* pInitializer) {
 			dyn_cast<llvm::Function>(currfunc->value)->getBasicBlockList().front().begin());
 		lastvar.value = llvmbuilder->CreateAlloca(lastvar.requestType(), nullptr,
 			lastvar.identifier);
+		std::string type_str;
+		llvm::raw_string_ostream rso(type_str);
+		lastvar.pllvmtype->print(rso);
+
+		auto dibasicty = llvmdibuilder->createArrayType(0, 0, llvmdibuilder->createBasicType(rso.str(), pdatalayout->getTypeStoreSizeInBits(lastvar.pllvmtype), llvm::dwarf::getAttributeEncoding("DW_ATE_unsigned_char")),{});
+		auto localvar = llvmdibuilder->createAutoVariable(llvmsub, lastvar.identifier, llvmcu->getFile(), evalperlexpruv("pos()"), dibasicty);
+		llvmdibuilder->insertDeclare(lastvar.value, localvar, llvmdibuilder->createExpression(), llvm::DILocation::get(*llvmctx, evalperlexpruv("pos()"), 0, llvmsub), llvmbuilder->GetInsertBlock());
 		llvmbuilder->SetInsertPoint(pcurrblock.back());
 	}
 }
@@ -3485,7 +3500,7 @@ test:
 	return var;
 }
 
-llvm::Type* buildllvmtypefull(std::list<type>& refdecltypevector) {
+llvm::Type* buildllvmtypefull(std::list<type>& refdecltypevector, bool ptrdeep) {
 	llvm::Type* pcurrtype = nullptr;
 
 	//refdecltypevector.clear();
@@ -3578,7 +3593,7 @@ llvm::Type* buildllvmtypefull(std::list<type>& refdecltypevector) {
 	}} };
 
 	try {
-		for (auto typeiter =
+		for (auto typeiter = ptrdeep ? refdecltypevector.rbegin() :
 			std::make_reverse_iterator(++std::find_if(refdecltypevector.begin(), refdecltypevector.end(),
 				[&](::type& type) {
 					return _Ranges::contains(std::array{ ::type::BASIC, ::type::POINTER }, type.uniontype);
@@ -4067,7 +4082,7 @@ rest:
 
 	val fixupval = calleevalntype;
 
-	if(fixupval.type.front().spec.func.callconv.empty())
+	if(fixupval.type.front().spec.func.callconv.empty() && !allowccompat)
 		fixupval.type.front() = fntype;
 
 	// if (functype->isPtrOrPtrVectorTy ())
@@ -4111,7 +4126,7 @@ DLL_EXPORT void endfunctionparamdecl(std::unordered_map<unsigned, std::string>&&
 
 	assert(functype.uniontype == type::FUNCTION);
 
-	functype.spec.func.bisvariadic = !hashes.contains("rest"_h);
+	functype.spec.func.bisvariadic = hashes.contains("rest"_h);
 }
 
 DLL_EXPORT void addptrtotype(std::unordered_map<unsigned, std::string>&& hashes);
