@@ -933,7 +933,7 @@ struct basehndl /* : bindings_compiling*/ {
 
 		auto paggregatety = tmp.requestType();
 		for (auto imm : immsiter) {
-			auto member = llvmbuilder->CreateGEP(paggregatety, tmp.value, { llvmbuilder->getInt32(0), llvmbuilder->getInt32(imember) });
+			auto member = llvmbuilder->CreateGEP(paggregatety, tmp.value, { llvmbuilder->getInt32(0), llvmbuilder->getInt32(imember++) });
 			llvmbuilder->CreateStore(imm.value, member);
 		}
 		
