@@ -663,7 +663,7 @@ struct var : valbase {
 		}
 		else {
 			if (type.front().spec.basicdeclspec.basic[1] == "enum") {
-				constant = llvm::ConstantInt::get((*llvmctx), llvm::APInt(32, type.front().spec.basicdeclspec.longspecsn));
+				constant = llvm::ConstantInt::get((*llvmctx), llvm::APInt(getInt32Ty(*llvmctx)->getBitWidth(), type.front().spec.basicdeclspec.longspecsn));
 				type.front().spec.basicdeclspec.longspecsn = 0;
 
 				type.front().spec.basicdeclspec.basic[1].clear();
@@ -5165,7 +5165,7 @@ DLL_EXPORT void end_ass_to_enum_def() {
 	announce_enum_def();
 }
 DLL_EXPORT void end_without_ass_to_enum_def() {
-	enums.back().back().memberconstants.back()->constant = llvm::ConstantInt::get((*llvmctx), llvm::APInt(32, enums.back().back().maxcount++));
+	enums.back().back().memberconstants.back()->constant = llvm::ConstantInt::get((*llvmctx), llvm::APInt(getInt32Ty(*llvmctx)->getBitWidth(), enums.back().back().maxcount++));
 	announce_enum_def();
 }
 
