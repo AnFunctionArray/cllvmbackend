@@ -3224,7 +3224,7 @@ DLL_EXPORT void memberaccess(std::unordered_map<unsigned, std::string>& hashentr
 
 	if (indirection) phndl->applyindirection();
 
-	assert(memberaccess_decoy(hashentry["ident"_h]));
+	assert(memberaccess_decoy(hashentry["ident_member"_h]));
 }
 
 DLL_EXPORT void endsizeoftypename() {
@@ -4965,7 +4965,7 @@ DLL_EXPORT void identifier_decl(std::unordered_map<unsigned, std::string> && has
 
 	//if (basic.spec.basicdeclspec.basic[3].empty())
 
-	var.identifier = hashes["ident"_h];
+	var.identifier = hashes["ident_decl"_h];
 
 	var.type = { basic };
 
