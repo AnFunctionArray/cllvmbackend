@@ -72,7 +72,7 @@ extern "C" void __cdecl _wassert2(
 #include <locale>
 #include <ostream>
 #include <queue>
-#ifndef __cpp_lib_ranges
+#if 1//ndef __cpp_lib_ranges
 #include <range/v3/algorithm/contains.hpp>
 #include <range/v3/algorithm/find.hpp>
 #include <range/v3/iterator/common_iterator.hpp>
@@ -2932,8 +2932,8 @@ void addvar(var& lastvar, llvm::Constant* pInitializer) {
 	else {
 		//default:
 		printtype(lastvar.requestType(), lastvar.identifier);
-		llvmbuilder->SetInsertPoint(&dyn_cast<llvm::Function>(currfunc->value)->getBasicBlockList().front(),
-			dyn_cast<llvm::Function>(currfunc->value)->getBasicBlockList().front().begin());
+		llvmbuilder->SetInsertPoint(&dyn_cast<llvm::Function>(currfunc->value)->front(),
+			dyn_cast<llvm::Function>(currfunc->value)->front().begin());
 		lastvar.value = llvmbuilder->CreateAlloca(lastvar.requestType(), nullptr,
 			lastvar.identifier);
 		std::string type_str;
@@ -3877,7 +3877,7 @@ DLL_EXPORT void gotolabel(std::unordered_map<unsigned, std::string>&& hashes) {
 
 void fixuplabels() {
 	for (auto& [branchinst, ident] : branches)
-		for (auto& bb : dyn_cast<llvm::Function> (currfunc->requestValue())->getBasicBlockList())
+		for (auto& bb : *dyn_cast<llvm::Function> (currfunc->requestValue()))
 			if (bb.getName() == ident)
 				branchinst->setSuccessor(0, &bb);
 	branches.clear();
@@ -3901,7 +3901,7 @@ bool bareweinabrupt(bool barewe) {
 	bool bareweinabruptlast = bareweinabrupt;
 	bareweinabrupt = barewe;*/
 	if (pcurrblock.size())
-		if (pcurrblock.back()->getInstList().size()) {
+		if (pcurrblock.back()->size()) {
 			auto lastinstropcode = pcurrblock.back()->back().getOpcode();
 			return _Ranges::contains(std::array{ llvm::Instruction::Br, llvm::Instruction::Switch,llvm::Instruction::Ret }, lastinstropcode);
 		}
