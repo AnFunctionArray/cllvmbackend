@@ -331,6 +331,8 @@ struct basic_type_origin {
 	std::bitset<4> qualifiers;
 
 	bool operator==(const basic_type_origin&) const = default;
+
+	std::shared_ptr<struct extra_basic_union> extra;
 };
 
 struct copy_assign_interf {
@@ -390,9 +392,6 @@ struct extra_basic_union {
 };
 
 struct bascitypespec : basic_type_origin {
-
-	extra_basic_union extra;
-
 	void strip();
 
 
@@ -778,7 +777,7 @@ void type::functype::strip() {
 
 void ::bascitypespec::strip()
 {
-	if (auto pannon = dynamic_cast<annon_struc_mem*>(reinterpret_cast<copy_assign_interf*>(extra.target_raw))) {
+	if (auto pannon = dynamic_cast<annon_struc_mem*>(reinterpret_cast<copy_assign_interf*>(extra->target_raw))) {
 		for (auto &elem : pannon->annonstruct) {
 			elem.strip();
 		}
@@ -2963,9 +2962,10 @@ DLL_EXPORT void check_stray_struc() {
 
 	if (structvar.identifier.empty()) {
 		currtypevectorbeingbuild.back().p->push_back(structvar);
-		currtypevectorbeingbuild.back().p->back().type.front().spec.basicdeclspec.extra.~extra_basic_union();
-		new (currtypevectorbeingbuild.back().p->back().type.front().spec.basicdeclspec.extra.target_raw) annon_struc_mem{};
-		reinterpret_cast<annon_struc_mem*>(currtypevectorbeingbuild.back().p->back().type.front().spec.basicdeclspec.extra.target_raw)->annonstruct = lastmembers;
+		auto extraptr = currtypevectorbeingbuild.back().p->back().type.front().spec.basicdeclspec.extra = std::make_shared<extra_basic_union>();
+		extraptr->~extra_basic_union();
+		new (extraptr->target_raw) annon_struc_mem{};
+		reinterpret_cast<annon_struc_mem*>(extraptr->target_raw)->annonstruct = lastmembers;
 	}
 }
 
@@ -3497,7 +3497,9 @@ tryagain:
 		}
 	}
 test:
-	if (!var) var = &dynamic_cast<annon_struc_mem*>(reinterpret_cast<copy_assign_interf*>(basic.extra.target_raw))->annonstruct;
+	if (!var) 
+	if (auto pstr = dynamic_cast<annon_struc_mem*>(reinterpret_cast<copy_assign_interf*>(basic.extra->target_raw)))
+		var = &pstr->annonstruct;
 
 	if (var && !var->front().pllvmtype)
 		fixupstructype(var);
@@ -4153,9 +4155,10 @@ DLL_EXPORT void endqualifs(std::unordered_map<unsigned, std::string>&& hashes) {
 				if (refbasic[3].empty()) {
 					auto* reflaststruc = &*laststruc;
 					//if (!reflaststruc->back().pllvmtype) fixupstructype(reflaststruc);
-					lastvar.type.back().spec.basicdeclspec.extra.~extra_basic_union();
-					new (lastvar.type.back().spec.basicdeclspec.extra.target_raw) annon_struc_mem{};
-					reinterpret_cast<annon_struc_mem*>(lastvar.type.back().spec.basicdeclspec.extra.target_raw)->annonstruct = *reflaststruc;
+					auto extraptr = lastvar.type.back().spec.basicdeclspec.extra = std::make_shared<extra_basic_union>();
+					extraptr->~extra_basic_union();
+					new (extraptr->target_raw) annon_struc_mem{};
+					reinterpret_cast<annon_struc_mem*>(extraptr->target_raw)->annonstruct = *reflaststruc;
 				}
 		}
 		else if (0) {
