@@ -4,9 +4,9 @@
 //#include "llvm/Support/Allocator.h"
 //#include "range/v3/view/reverse.hpp"
 
-#include "range/v3/view/reverse.hpp"
+#include <range/v3/view/reverse.hpp>
 #include "range/v3/view/single.hpp"
-#include "llvm/ADT/Triple.h"
+#include "llvm/TargetParser/Triple.h"
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/DebugInfo.h"
@@ -4143,7 +4143,7 @@ DLL_EXPORT void endqualifs(std::unordered_map<unsigned, std::string>&& hashes) {
 
 	auto& refbasic = lastvar.type.back().spec.basicdeclspec.basic;
 
-	if (std::all_of(refbasic.begin(), refbasic.end(), [](const std::string& elem) {return elem.empty(); }))
+	if (std::all_of(refbasic.begin(), refbasic.end(), (bool (*)( const std::string& c ))std::empty))
 		if (pcurrblock.empty()) refbasic[1] = "int";
 		else throw std::runtime_error{ "decl with no basic info" };
 

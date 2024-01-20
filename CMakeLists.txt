@@ -9,6 +9,10 @@ add_custom_command(
 
 find_package(PerlLibs 5.28.0)
 
+find_package(range-v3 REQUIRED)
+
+find_package(zstd REQUIRED)
+
 if(NOT DEFINED ENV{LLVM_CONFIG})
     find_program(LLVM_CONFIG "llvm-config")
 else()
@@ -42,13 +46,13 @@ string(STRIP ${llvm_libdir} llvm_libdir)
 
 target_link_directories(regularc PRIVATE ${llvm_libdir})
 
-target_link_libraries(regularc PRIVATE ${llvm_libraries} -rdynamic ${PERL_LIBRARY} -lpthread -lz -lcurses -ldl -lc -lzstd)
+target_link_libraries(regularc PRIVATE ${llvm_libraries} -rdynamic ${PERL_LIBRARY} -lpthread -lz -lcurses -ldl -lc zstd::libzstd_static range-v3::range-v3)
 
 target_compile_options(regularc PRIVATE -rdynamic -O0 -g3 -fpermissive)
 
 set(CMAKE_C_FLAGS -Wno-error=implicit-function-declaration)
 
-target_include_directories(regularc PRIVATE ${PERL_INCLUDE_PATH} ${llvm_includes} src)
+target_include_directories(regularc PRIVATE ${PERL_INCLUDE_PATH} ${llvm_includes} src /opt/local/include)
 
 set_property(TARGET regularc PROPERTY CXX_STANDARD 23)
 
